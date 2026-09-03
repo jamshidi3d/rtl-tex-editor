@@ -391,12 +391,12 @@ async function build() {
     if (body.ok && body.pdf) {
       setStatus('build ok', 'ok');
       const src = '/api/pdf?path=' + encodeURIComponent(body.pdf) + '&t=' + Date.now();
-      $('#pdf').src = src;
       $('#openPdf').href = src;
       $('#pdfWrap').classList.remove('empty-shown');
       setPreviewMode('pdf');
-      lastPdfPage = 0;
-      if (syncOn) $('#pdf').addEventListener('load', () => syncFromEditor(), { once: true });
+      lastPdfPage = 0; lastPdfV = null;
+      try { await loadPdf(src); } catch (e) { setStatus('PDF viewer: ' + e.message, 'err'); }
+      if (syncOn) syncFromEditor();
     } else {
       setStatus('build failed', 'err');
       $('#logbar').classList.remove('collapsed');
@@ -457,11 +457,11 @@ async function ensureMdLibs() {
 function setPreviewMode(m) {
   previewMode = m;
   const md = m === 'md';
-  $('#pdf').hidden = md;
+  $('#pdfDoc').hidden = md;
   $('#mdView').hidden = !md;
   $('#openPdf').style.display = md ? 'none' : '';
   $('#previewTitle').textContent = md ? 'Markdown preview' : 'PDF preview';
-  $('#pdfWrap').classList.toggle('empty-shown', !md && !$('#pdf').src);
+  $('#pdfWrap').classList.toggle('empty-shown', !md && !pdfLoaded);
 }
 
 // Turn Markdown source into a DOM tree.
@@ -581,6 +581,91 @@ async function renderMd() {
 }
 function scheduleMd() { clearTimeout(mdTimer); mdTimer = setTimeout(renderMd, 220); }
 
+// ------------------------------------------------------------------ pdf viewer
+// The PDF preview is a pdf.js render view (not the browser's native plugin) so
+// we can position it precisely, highlight a spot, and read clicks back for
+// reverse SyncTeX. Libraries are pulled from cdnjs on first use; pinned to the
+// last classic-UMD release (4.x is ESM-only).
+const PDFJS = '3.11.174';
+let pdfjsReady = null;
+let pdfViewer = null;
+let pdfLinkService = null;
+let pdfEventBus = null;
+let pdfDocObj = null;
+let pdfLoaded = false;
+let pdfUrl = null;
+let _pdfKeep = null;
+let pdfHlEl = null;
+let pdfFitRO = null;
+function debounce(fn, ms) {
+  let t = null;
+  return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+}
+function ensurePdfLibs() {
+  if (pdfjsReady) return pdfjsReady;
+  pdfjsReady = loadAssets('pdfjs', [
+    CDN + 'pdf.js/' + PDFJS + '/pdf.min.js',
+    CDN + 'pdf.js/' + PDFJS + '/pdf_viewer.min.js',
+    CDN + 'pdf.js/' + PDFJS + '/pdf_viewer.min.css',
+  ]).then(() => {
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = '/api/pdfjs-worker';
+  });
+  return pdfjsReady;
+}
+function initPdfViewer() {
+  if (pdfViewer) return;
+  pdfEventBus = new window.pdfjsViewer.EventBus();
+  pdfLinkService = new window.pdfjsViewer.PDFLinkService({ eventBus: pdfEventBus });
+  pdfViewer = new window.pdfjsViewer.PDFViewer({
+    container: $('#pdfDoc'),
+    viewer: $('#pdfViewer'),
+    eventBus: pdfEventBus,
+    linkService: pdfLinkService,
+    textLayerMode: 1,
+  });
+  pdfLinkService.setViewer(pdfViewer);
+  pdfEventBus.on('pagesinit', () => {
+    pdfViewer.currentScaleValue = 'page-width';
+    restorePdfScroll();
+  });
+  pdfFitRO = new ResizeObserver(debounce(() => {
+    if (pdfViewer && pdfViewer.pdfDocument) pdfViewer.currentScaleValue = 'page-width';
+  }, 120));
+  pdfFitRO.observe($('#pdfDoc'));
+  $('#pdfDoc').addEventListener('click', onPdfClick);
+}
+async function loadPdf(url) {
+  await ensurePdfLibs();
+  initPdfViewer();
+  _pdfKeep = pdfLoaded ? { page: pdfViewer.currentPageNumber } : null;
+  if (pdfDocObj) { try { pdfDocObj.destroy(); } catch {} }
+  pdfDocObj = await window.pdfjsLib.getDocument({ url }).promise;
+  pdfLinkService.setDocument(pdfDocObj, null);
+  pdfViewer.setDocument(pdfDocObj);
+  pdfLoaded = true;
+  pdfUrl = url;
+}
+function restorePdfScroll() {
+  if (_pdfKeep && _pdfKeep.page && _pdfKeep.page <= pdfViewer.pagesCount) {
+    pdfViewer.currentPageNumber = _pdfKeep.page;
+  }
+  _pdfKeep = null;
+}
+function unloadPdf() {
+  if (pdfViewer) pdfViewer.setDocument(null);
+  if (pdfDocObj) { try { pdfDocObj.destroy(); } catch {} pdfDocObj = null; }
+  pdfLoaded = false;
+  pdfUrl = null;
+}
+function pdfGoto(page, xPt, yPt) {
+  if (!pdfViewer || !pdfLoaded) return;
+  pdfViewer.scrollPageIntoView({
+    pageNumber: page,
+    destArray: xPt == null ? null : [null, { name: 'XYZ' }, xPt, yPt, null],
+  });
+}
+function onPdfClick() { /* reverse sync — wired in phase 3 */ }
+
 // ------------------------------------------------------------------ view sync
 // A toggle (⇅) links editor and preview scrolling.
 //   Markdown: bidirectional, anchored on the data-src-line of each block.
@@ -686,22 +771,8 @@ function pdfSyncFromEditor() {
     } catch { return; }
     if (!r || !r.ok || !r.page || r.page === lastPdfPage) return;
     lastPdfPage = r.page;
-    gotoPdfPage(r.page);
+    pdfGoto(r.page);
   }, 300);
-}
-function gotoPdfPage(page) {
-  const f = $('#pdf');
-  const cur = f.getAttribute('src') || '';
-  if (!cur) return;
-  const base = cur.split('#')[0];
-  try {
-    // Chrome's built-in viewer navigates on a hash change without reloading.
-    if (f.contentWindow && f.contentWindow.location) {
-      f.contentWindow.location.hash = 'page=' + page;
-      return;
-    }
-  } catch (e) { /* cross-origin (Firefox pdf.js) — fall through to src */ }
-  f.setAttribute('src', base + '#page=' + page);
 }
 
 // ------------------------------------------------------------------ status
@@ -992,7 +1063,7 @@ async function chooseRoot(p) {
     cm.clearHistory();
     $('#fileName').textContent = 'no file open';
     setDirty(false);
-    $('#pdf').removeAttribute('src');
+    unloadPdf();
     $('#pdfWrap').classList.add('empty-shown');
     await loadTree();
     const bib = findFirst(treeData, /references\.bib$/i) || findFirst(treeData, /\.bib$/i);

@@ -67,11 +67,13 @@ the tree.
 
 ## Notes & limits
 
-- **PDF pane** = the browser's native PDF viewer in an `<iframe>`; it reloads
-  after each successful build. Forward sync (editor → PDF page) parses the
-  `.synctex.gz` that `latexmk -synctex=1` writes — no external `synctex` binary
-  needed. Page granularity only, and the embedded viewer may flash when it jumps
-  pages. Reverse sync (PDF → editor) isn't possible with the native viewer.
+- **PDF pane** is rendered with **pdf.js** (pinned 3.11.174, the last classic-UMD
+  build; lazy-loaded from cdnjs on first build). Fit-to-width, virtualized pages.
+  The pdf.js web worker is re-served from `/api/pdfjs-worker` (fetched once from
+  cdnjs, cached in memory) so it runs as a real worker, not the slow main-thread
+  fallback. `↗` still opens the raw PDF in the browser's own viewer (print /
+  download / find). SyncTeX parses the `.synctex.gz` that `latexmk -synctex=1`
+  writes — no external `synctex` binary needed.
 - **Markdown pane** renders with `marked` + `DOMPurify`, `KaTeX`, and `mermaid`,
   all loaded from cdnjs the first time a `.md` file is opened (mermaid is ~3 MB —
   fetched only if a diagram is present). Math is protected from the Markdown

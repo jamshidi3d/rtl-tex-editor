@@ -40,6 +40,9 @@ const cliRoot = opt('root', null);
 const ROOT_FROM_CLI = !!cliRoot;
 setRoot(cliRoot || process.cwd());
 
+const PDFJS_VER = '3.11.174';
+let _pdfWorkerJs = null; // cached pdf.js worker bytes (fetched once from cdnjs)
+
 const HIDE_DIRS = new Set(['.git', 'node_modules', '.cache', '.svn', '.hg']);
 const parentOf = (p) => {
   const d = path.dirname(p);
@@ -196,6 +199,28 @@ async function api(req, res, pathname, query) {
       latexmk: r.code === 0,
       synctex: r.code === 0, // we parse the .synctex.gz ourselves (latexmk builds with -synctex=1)
       version: (r.out.match(/Version[^\n]*/) || [''])[0].trim(),
+    });
+  }
+
+  // Re-serve the pdf.js web worker from our own origin. cdnjs blocks a
+  // cross-origin `new Worker(...)`, which would drop pdf.js to its slow
+  // main-thread "fake worker". Fetched once, cached in memory (no disk write,
+  // so .gitignore's public/vendor/ rule is untouched).
+  if (pathname === '/api/pdfjs-worker' && req.method === 'GET') {
+    if (!_pdfWorkerJs) {
+      try {
+        const w = await fetch(`https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${PDFJS_VER}/pdf.worker.min.js`);
+        if (!w.ok) throw new Error('HTTP ' + w.status);
+        _pdfWorkerJs = Buffer.from(await w.arrayBuffer());
+      } catch (e) {
+        console.warn('[pdfjs-worker] fetch failed, pdf.js will use the main-thread fallback:', e.message);
+        return send(res, 502, '// pdf.js worker fetch failed: ' + e.message,
+          { 'Content-Type': 'text/javascript; charset=utf-8' });
+      }
+    }
+    return send(res, 200, _pdfWorkerJs, {
+      'Content-Type': 'text/javascript; charset=utf-8',
+      'Cache-Control': 'public, max-age=31536000, immutable',
     });
   }
 

@@ -131,14 +131,26 @@ body {
 #editor { flex: 1; min-height: 0; overflow: hidden; }
 
 #pdfWrap { position: relative; flex: 1; min-height: 0; background: #525659; }
-#pdf { width: 100%; height: 100%; border: 0; display: block; }
-#pdfWrap.empty-shown #pdf { visibility: hidden; }
+#pdfDoc { position: absolute; inset: 0; overflow: auto; }
+#pdfWrap.empty-shown #pdfDoc { visibility: hidden; }
+#pdfViewer.pdfViewer { position: relative; }
+.pdfViewer .page { margin: 10px auto; border: 0; }
 .empty {
   position: absolute; inset: 0; display: none;
   align-items: center; justify-content: center; color: #cfd2d6;
 }
 #pdfWrap.empty-shown .empty { display: flex; }
 [hidden] { display: none !important; }
+
+/* editor <-> PDF SyncTeX highlight (fades out) */
+.synctex-hl {
+  position: absolute; pointer-events: none; z-index: 5;
+  background: rgba(255, 210, 80, .45); border-radius: 2px;
+  animation: synctexFade 1.2s ease-out forwards;
+}
+@keyframes synctexFade { from { opacity: .55; } to { opacity: 0; } }
+.CodeMirror .src-flash { background: rgba(255, 210, 80, .35); }
+.CodeMirror .src-flash-line { background: rgba(255, 210, 80, .18); }
 
 /* ---- Markdown preview ------------------------------------------------------ */
 .md-view {
