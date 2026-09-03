@@ -334,13 +334,6 @@ body {
 .CodeMirror pre.CodeMirror-line.rtl-line,
 .CodeMirror pre.CodeMirror-line-like.rtl-line { direction: rtl; text-align: right; }
 .rtl-line-wrap, .rtl-line-wrap > pre { direction: rtl; text-align: right; }
-/* On an RTL line, LaTeX markup tokens ( \command  { } $ [ ] … ) render as LTR
-   islands — no mirroring, no reordering — matching bidiOrder's charType
-   override so the browser and CodeMirror agree. */
-.CodeMirror pre.CodeMirror-line.rtl-line :is(.cm-tag, .cm-def, .cm-bracket, .cm-keyword) {
-  unicode-bidi: isolate;
-  direction: ltr;
-}
 
 /* dir: rtl / dir: ltr — force every line the same way (wins over the per-line rule).
    .force-rtl / .force-ltr sit on the .CodeMirror wrapper itself. */
