@@ -656,6 +656,20 @@ function fitPdf(tries) {
   if (w > 20) { try { pdfViewer.currentScaleValue = 'page-width'; } catch (e) { /* ignore */ } return; }
   if ((tries || 0) < 30) requestAnimationFrame(() => fitPdf((tries || 0) + 1));
 }
+// PDF dark mode. `pdfInvert`: 'auto' follows the app theme, 'on'/'off' override.
+// Toggle cycles auto -> on -> off with Alt+I (see the keydown listener).
+let pdfInvert = 'auto';
+function applyPdfInvert() {
+  const on = pdfInvert === 'on' || (pdfInvert === 'auto' && app.dataset.theme === 'dark');
+  $('#pdfDoc').classList.toggle('pdf-invert', on);
+}
+function cyclePdfInvert() {
+  pdfInvert = pdfInvert === 'auto' ? 'on' : pdfInvert === 'on' ? 'off' : 'auto';
+  LS.set('pdfInvert', pdfInvert);
+  applyPdfInvert();
+  status200flash('PDF ' + (pdfInvert === 'auto' ? 'dark: follows theme' : 'dark: ' + pdfInvert));
+}
+
 // Re-fit + repaint a few times after a fresh setDocument, in case the pane's
 // size settles a frame or two late.
 function kickPdfRender() {
@@ -1150,7 +1164,15 @@ $('#theme').addEventListener('click', () => {
   LS.set('theme', next);
   $('#theme').textContent = next === 'dark' ? '☾ dark' : '☀ light';
   if (cm) cm.setOption('theme', cmTheme(next));
+  applyPdfInvert(); // 'auto' PDF dark mode tracks the app theme
   if (previewMode === 'md') renderMd(); // re-theme mermaid diagrams
+});
+// Alt+I anywhere: cycle the PDF preview's dark mode (auto -> on -> off)
+document.addEventListener('keydown', (e) => {
+  if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.key === 'i' || e.key === 'I')) {
+    e.preventDefault();
+    cyclePdfInvert();
+  }
 });
 $('#swap').addEventListener('click', () => {
   app.dataset.editorSide = app.dataset.editorSide === 'left' ? 'right' : 'left';
@@ -1288,6 +1310,8 @@ function restoreLayout() {
   $('#dirBtn').textContent = 'dir: ' + dm;
   syncOn = LS.get('sync', false);
   $('#sync').classList.toggle('on', syncOn);
+  pdfInvert = ['auto', 'on', 'off'].includes(LS.get('pdfInvert', 'auto')) ? LS.get('pdfInvert', 'auto') : 'auto';
+  applyPdfInvert();
   $('#showAux').checked = LS.get('showAux', false);
   $('#workbench').style.setProperty('--sidebar-w', LS.get('sidebarW', 260) + 'px');
   const ef = LS.get('edFlex', 0.5);

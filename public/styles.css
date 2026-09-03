@@ -136,6 +136,12 @@ body {
 #pdfWrap.empty-shown #pdfDoc { visibility: hidden; }
 #pdfViewer.pdfViewer { position: relative; }
 .pdfViewer .page { margin: 10px auto; border: 0; }
+
+/* PDF dark mode — invert the rendered pages; hue-rotate keeps colours sane.
+   Toggle with Alt+I (auto follows the app theme). */
+#pdfDoc.pdf-invert { background: #2b2b2b; }
+#pdfDoc.pdf-invert .pdfViewer .page { background-color: #1e1e1e; }
+#pdfDoc.pdf-invert .pdfViewer .canvasWrapper { filter: invert(0.92) hue-rotate(180deg); }
 .empty {
   position: absolute; inset: 0; display: none;
   align-items: center; justify-content: center; color: #cfd2d6;

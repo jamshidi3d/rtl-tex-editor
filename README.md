@@ -53,6 +53,7 @@ switch below).
 | Pick the main `.tex` | the **main** dropdown, or the *main* badge on a `.tex` row (defaults to `PhDThesis.tex`) |
 | Editor left / right of the PDF | **⇄ sides** |
 | Light / dark | **☾ / ☀** |
+| PDF dark mode | **Alt+I** cycles `auto` (follows the app theme — dark app → inverted PDF) → `on` → `off`. Remembered. |
 | Text direction | **dir:** cycles `auto` (per line — a non-command line with Persian is RTL, everything else LTR; default) → `rtl` (force every line RTL) → `ltr` (force every line LTR). In `auto`, each line's bidi order, alignment and arrow-key motion follow its own base direction. Choice is remembered. |
 | Accept a completion | **Tab** or click (Enter is always a newline) |
 | Resize | drag the bars between sidebar / editor / PDF |
