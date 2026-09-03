@@ -74,6 +74,7 @@ body {
 }
 .icon { padding: 3px 7px; background: transparent; }
 .btn:hover, .icon:hover { border-color: var(--accent); }
+.icon.active { color: var(--accent); border-color: var(--accent); }
 .btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
 .btn.primary:disabled { opacity: .55; cursor: default; }
 .btn.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }

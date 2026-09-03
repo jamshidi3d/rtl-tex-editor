@@ -466,6 +466,7 @@ function setPreviewMode(m) {
   $('#pdfDoc').hidden = md;
   $('#mdView').hidden = !md;
   $('#openPdf').style.display = md ? 'none' : '';
+  $('#pdfInvertBtn').style.display = md ? 'none' : '';
   $('#previewTitle').textContent = md ? 'Markdown preview' : 'PDF preview';
   $('#pdfWrap').classList.toggle('empty-shown', !md && !pdfLoaded);
 }
@@ -662,6 +663,11 @@ let pdfInvert = 'auto';
 function applyPdfInvert() {
   const on = pdfInvert === 'on' || (pdfInvert === 'auto' && app.dataset.theme === 'dark');
   $('#pdfDoc').classList.toggle('pdf-invert', on);
+  const b = $('#pdfInvertBtn');
+  if (b) {
+    b.classList.toggle('active', on);
+    b.title = 'PDF dark mode: ' + (pdfInvert === 'auto' ? 'auto (follows theme)' : pdfInvert) + ' — Alt+I';
+  }
 }
 function cyclePdfInvert() {
   pdfInvert = pdfInvert === 'auto' ? 'on' : pdfInvert === 'on' ? 'off' : 'auto';
@@ -1167,7 +1173,8 @@ $('#theme').addEventListener('click', () => {
   applyPdfInvert(); // 'auto' PDF dark mode tracks the app theme
   if (previewMode === 'md') renderMd(); // re-theme mermaid diagrams
 });
-// Alt+I anywhere: cycle the PDF preview's dark mode (auto -> on -> off)
+// PDF dark mode — the ◐ button on the preview pane, or Alt+I anywhere.
+$('#pdfInvertBtn').addEventListener('click', cyclePdfInvert);
 document.addEventListener('keydown', (e) => {
   if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.key === 'i' || e.key === 'I')) {
     e.preventDefault();
