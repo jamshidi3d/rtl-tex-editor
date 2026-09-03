@@ -273,8 +273,15 @@ function initEditor() {
   applyDir();
   markAllCmdLines();
   cm.on('change', () => { setDirty(isDirty()); if (previewMode === 'md') scheduleMd(); });
+  tw.preview = makePaneTween('preview', () => $('#mdView').scrollTop, (y) => { $('#mdView').scrollTop = y; });
+  tw.editor = makePaneTween('editor', () => cm.getScrollInfo().top, (y) => cm.scrollTo(null, y));
   cm.on('scroll', rafThrottle(syncFromEditor));
   $('#mdView').addEventListener('scroll', rafThrottle(mdSyncFromPreview));
+  // a genuine fast user scroll should stop the incoming glide, not be mistaken for it
+  const stopIn = (el, pane) => ['wheel', 'pointerdown', 'keydown'].forEach(
+    (ev) => el.addEventListener(ev, () => tw[pane].cancel(), { passive: true }));
+  stopIn($('#mdView'), 'preview');
+  stopIn(cm.getScrollerElement(), 'editor');
   cm.on('changes', (ed, changes) => {
     let lo = Infinity;
     let hi = -1;
@@ -577,16 +584,42 @@ function scheduleMd() { clearTimeout(mdTimer); mdTimer = setTimeout(renderMd, 22
 // ------------------------------------------------------------------ view sync
 // A toggle (⇅) links editor and preview scrolling.
 //   Markdown: bidirectional, anchored on the data-src-line of each block.
-//   PDF:      editor -> PDF page only, via SyncTeX (the embedded PDF viewer
-//             gives us no scroll position back, so reverse isn't possible).
+//   PDF:      editor <-> PDF via SyncTeX (see the pdf viewer section).
 let syncOn = false;
 let syncCap = { synctex: false };
 let mdAnchors = [];
-let syncLock = 0;
 let pdfSyncTimer = null;
 let lastPdfPage = 0;
-const isLocked = () => performance.now() < syncLock;
-const lockSync = (ms) => { syncLock = performance.now() + (ms || 250); };
+let lastPdfV = null;
+
+// Eased scrolling: each pane has a tween that lerps toward a mutable target on
+// its own rAF loop; a fresh .to() mid-flight just retargets. `prog[name]` is
+// bumped on every programmatic write so the *other* pane's handler can tell a
+// programmatic scroll from a user one (paneBusy) for as long as the tween runs
+// plus one trailing frame — this replaces the old fixed-250ms lock.
+const tw = {};
+const prog = { editor: 0, preview: 0 };
+function makePaneTween(name, read, write) {
+  let raf = 0;
+  let target = 0;
+  let active = false;
+  const step = () => {
+    const cur = read();
+    const d = target - cur;
+    if (Math.abs(d) <= 0.5) { write(target); prog[name] = performance.now(); active = false; raf = 0; return; }
+    write(cur + d * 0.2);
+    prog[name] = performance.now();
+    raf = requestAnimationFrame(step);
+  };
+  return {
+    get active() { return active; },
+    to(y) { target = y; if (!active) { active = true; raf = requestAnimationFrame(step); } },
+    cancel() { if (raf) cancelAnimationFrame(raf); raf = 0; active = false; },
+  };
+}
+function paneBusy(name) {
+  return (tw[name] && tw[name].active) || (performance.now() - prog[name]) < 64;
+}
 function rafThrottle(fn) {
   let queued = false;
   return () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; fn(); }); };
@@ -595,18 +628,17 @@ function editorTopLine() {
   return cm.lineAtHeight(cm.getScrollInfo().top + 2, 'local');
 }
 function syncFromEditor() {
-  if (!syncOn || isLocked()) return;
+  if (!syncOn || paneBusy('editor')) return;
   if (previewMode === 'md') mdSyncFromEditor();
   else pdfSyncFromEditor();
 }
 const maxScroll = (el) => Math.max(1, el.scrollHeight - el.clientHeight);
 function mdSyncFromEditor() {
-  if (previewMode !== 'md') return;
+  if (previewMode !== 'md' || paneBusy('editor')) return;
   const view = $('#mdView');
   if (!mdAnchors.length) { // no anchors (render failed / empty) -> proportional
     const si = cm.getScrollInfo();
-    lockSync();
-    view.scrollTop = (si.top / Math.max(1, si.height - si.clientHeight)) * maxScroll(view);
+    tw.preview.to((si.top / Math.max(1, si.height - si.clientHeight)) * maxScroll(view));
     return;
   }
   const top = editorTopLine();
@@ -618,16 +650,14 @@ function mdSyncFromEditor() {
   const bTop = b ? b.el.offsetTop : view.scrollHeight;
   const span = b ? b.line - a.line : Math.max(1, top - a.line + 1);
   const frac = Math.max(0, Math.min(1, (top - a.line) / span));
-  lockSync();
-  view.scrollTop = aTop + (bTop - aTop) * frac - 6;
+  tw.preview.to(aTop + (bTop - aTop) * frac - 6);
 }
 function mdSyncFromPreview() {
-  if (!syncOn || isLocked() || previewMode !== 'md') return;
+  if (!syncOn || paneBusy('preview') || previewMode !== 'md') return;
   const view = $('#mdView');
   if (!mdAnchors.length) {
     const si = cm.getScrollInfo();
-    lockSync();
-    cm.scrollTo(null, (view.scrollTop / maxScroll(view)) * Math.max(1, si.height - si.clientHeight));
+    tw.editor.to((view.scrollTop / maxScroll(view)) * Math.max(1, si.height - si.clientHeight));
     return;
   }
   const y = view.scrollTop + 6;
@@ -639,8 +669,7 @@ function mdSyncFromPreview() {
   const bTop = b ? b.el.offsetTop : view.scrollHeight;
   const span = b ? b.line - a.line : 1;
   const frac = bTop > aTop ? Math.max(0, Math.min(1, (y - aTop) / (bTop - aTop))) : 0;
-  lockSync();
-  cm.scrollTo(null, cm.heightAtLine(Math.floor(a.line + span * frac), 'local') - 4);
+  tw.editor.to(cm.heightAtLine(Math.floor(a.line + span * frac), 'local') - 4);
 }
 function pdfSyncFromEditor() {
   if (previewMode !== 'pdf' || !syncCap.synctex) return;
@@ -880,7 +909,11 @@ $('#sync').addEventListener('click', () => {
   syncOn = !syncOn;
   LS.set('sync', syncOn);
   $('#sync').classList.toggle('on', syncOn);
-  if (syncOn) { lastPdfPage = 0; syncFromEditor(); }
+  if (syncOn) {
+    lastPdfPage = 0; lastPdfV = null;
+    tw.preview.cancel(); tw.editor.cancel();
+    syncFromEditor();
+  }
 });
 $('#logToggle').addEventListener('click', () => {
   const c = $('#logbar').classList.toggle('collapsed');
