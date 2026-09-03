@@ -276,6 +276,7 @@ function initEditor() {
   tw.preview = makePaneTween('preview', () => $('#mdView').scrollTop, (y) => { $('#mdView').scrollTop = y; });
   tw.editor = makePaneTween('editor', () => cm.getScrollInfo().top, (y) => cm.scrollTo(null, y));
   cm.on('scroll', rafThrottle(syncFromEditor));
+  cm.on('cursorActivity', onCaretActivity);
   $('#mdView').addEventListener('scroll', rafThrottle(mdSyncFromPreview));
   // a genuine fast user scroll should stop the incoming glide, not be mistaken for it
   const stopIn = (el, pane) => ['wheel', 'pointerdown', 'keydown'].forEach(
@@ -597,6 +598,7 @@ let pdfUrl = null;
 let _pdfKeep = null;
 let pdfHlEl = null;
 let pdfFitRO = null;
+let reverseJumpGuard = 0;
 function debounce(fn, ms) {
   let t = null;
   return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
@@ -664,7 +666,95 @@ function pdfGoto(page, xPt, yPt) {
     destArray: xPt == null ? null : [null, { name: 'XYZ' }, xPt, yPt, null],
   });
 }
-function onPdfClick() { /* reverse sync — wired in phase 3 */ }
+
+// Flash a fading box over a spot on a rendered page. `rect` is in unscaled PDF
+// points, top-left origin: { xPt, yTopPt, wPt, hPt }.
+function showSynctexHighlight(page, rect) {
+  const pv = pdfViewer && pdfViewer.getPageView(page - 1);
+  if (!pv || !pv.div || !pv.viewport) {
+    if (pdfEventBus) {
+      const again = (e) => {
+        if (e.pageNumber !== page) return;
+        pdfEventBus.off('pagerendered', again);
+        showSynctexHighlight(page, rect);
+      };
+      pdfEventBus.on('pagerendered', again);
+    }
+    return;
+  }
+  const s = pv.viewport.scale;
+  if (!pdfHlEl) { pdfHlEl = document.createElement('div'); pdfHlEl.className = 'synctex-hl'; }
+  let left, top, width, height;
+  if (rect.wPt > 1 && rect.hPt > 1) {
+    left = rect.xPt * s;
+    top = (rect.yTopPt - rect.hPt) * s;
+    width = rect.wPt * s;
+    height = (rect.hPt + 4) * s;
+  } else {
+    left = 0;
+    width = pv.div.clientWidth;
+    top = rect.yTopPt * s - 6;
+    height = 12;
+  }
+  pdfHlEl.style.cssText = `left:${left}px;top:${top}px;width:${width}px;height:${height}px`;
+  pv.div.appendChild(pdfHlEl);
+  pdfHlEl.classList.remove('synctex-hl');
+  void pdfHlEl.offsetWidth; // restart the fade
+  pdfHlEl.classList.add('synctex-hl');
+  const done = () => { pdfHlEl.removeEventListener('animationend', done); if (pdfHlEl.parentNode) pdfHlEl.remove(); };
+  pdfHlEl.addEventListener('animationend', done);
+}
+
+// Click on the rendered PDF -> open the matching source file at its line.
+function onPdfClick(e) {
+  if (!syncOn || !syncCap.synctex || !pdfViewer) return;
+  const pageEl = e.target.closest && e.target.closest('.page');
+  if (!pageEl) return;
+  const pageNumber = +pageEl.dataset.pageNumber;
+  const pv = pdfViewer.getPageView(pageNumber - 1);
+  if (!pv || !pv.div || !pv.viewport) return;
+  const r = pv.div.getBoundingClientRect();
+  const cx = e.clientX - r.left;
+  const cy = e.clientY - r.top;
+  const [xPdf, yPdf] = pv.viewport.convertToPdfPoint(cx, cy);
+  const hPt = xPdf;
+  const vPt = pv.viewport.viewBox[3] - yPdf; // -> top-left origin
+  reverseSync($('#mainFile').value, pageNumber, hPt, vPt);
+}
+async function reverseSync(main, page, hPt, vPt) {
+  if (!main) return;
+  let r;
+  try {
+    r = (await api('/api/synctex-reverse?main=' + encodeURIComponent(main) +
+      '&page=' + page + '&h=' + hPt.toFixed(2) + '&v=' + vPt.toFixed(2))).body;
+  } catch { return; }
+  if (!r || !r.ok || !r.file) { status200flash('no source for that spot'); return; }
+  await jumpToSource(r.file, r.line);
+}
+async function jumpToSource(file, line) {
+  const cur = curf.path ? curf.path.split('\\').join('/') : null;
+  if (cur !== file) {
+    await openFile(file);
+    if (!curf.path || curf.path.split('\\').join('/') !== file) return; // user cancelled
+  }
+  const ln = Math.max(0, (line || 1) - 1);
+  reverseJumpGuard = performance.now() + 400; // suppress the caret-driven forward sync we're about to cause
+  lastPdfPage = 0; lastPdfV = null;
+  cm.setCursor({ line: ln, ch: 0 });
+  cm.scrollIntoView({ line: ln, ch: 0 }, 120);
+  cm.focus();
+  flashLine(ln);
+}
+function flashLine(ln) {
+  if (ln < 0 || ln >= cm.lineCount()) return;
+  const len = (cm.getLine(ln) || '').length;
+  if (len) {
+    const m = cm.markText({ line: ln, ch: 0 }, { line: ln, ch: len }, { className: 'src-flash' });
+    setTimeout(() => m.clear(), 1200);
+  }
+  cm.addLineClass(ln, 'wrap', 'src-flash-line');
+  setTimeout(() => cm.removeLineClass(ln, 'wrap', 'src-flash-line'), 1200);
+}
 
 // ------------------------------------------------------------------ view sync
 // A toggle (⇅) links editor and preview scrolling.
@@ -756,12 +846,14 @@ function mdSyncFromPreview() {
   const frac = bTop > aTop ? Math.max(0, Math.min(1, (y - aTop) / (bTop - aTop))) : 0;
   tw.editor.to(cm.heightAtLine(Math.floor(a.line + span * frac), 'local') - 4);
 }
-function pdfSyncFromEditor() {
-  if (previewMode !== 'pdf' || !syncCap.synctex) return;
+const SP = 65536;
+function pdfSyncFromEditor(opts) {
+  const fromCaret = !!(opts && opts.fromCaret);
+  if (previewMode !== 'pdf' || !syncCap.synctex || !pdfLoaded) return;
   if (!curf.path || !/\.tex$/i.test(curf.path)) return;
   const main = $('#mainFile').value;
   if (!main) return;
-  const line = editorTopLine() + 1;
+  const line = (fromCaret ? cm.getCursor('head').line : editorTopLine()) + 1;
   clearTimeout(pdfSyncTimer);
   pdfSyncTimer = setTimeout(async () => {
     let r;
@@ -769,10 +861,28 @@ function pdfSyncFromEditor() {
       r = (await api('/api/synctex?main=' + encodeURIComponent(main) +
         '&file=' + encodeURIComponent(curf.path) + '&line=' + line)).body;
     } catch { return; }
-    if (!r || !r.ok || !r.page || r.page === lastPdfPage) return;
-    lastPdfPage = r.page;
-    pdfGoto(r.page);
-  }, 300);
+    if (!r || !r.ok || !r.page) return;
+    // relaxed dedup: repeat only when we're on the same page AND within ~a line
+    if (r.page === lastPdfPage && lastPdfV != null && Math.abs(r.v - lastPdfV) < 4000) return;
+    lastPdfPage = r.page; lastPdfV = r.v;
+    const MAG = (r.mag || 1000) / 1000;
+    const xPt = (r.h * (r.unit || 1) + (r.xoff || 0)) / SP * MAG;
+    const vTopPt = (r.v * (r.unit || 1) + (r.yoff || 0)) / SP * MAG;
+    const pv = pdfViewer.getPageView(r.page - 1);
+    const pageHpt = pv && pv.viewport ? pv.viewport.viewBox[3] : 842;
+    pdfGoto(r.page, xPt, (pageHpt - vTopPt) + 12);
+    showSynctexHighlight(r.page, {
+      xPt,
+      yTopPt: vTopPt,
+      wPt: (r.W || 0) / SP * MAG,
+      hPt: ((r.H || 0) + (r.D || 0)) / SP * MAG,
+    });
+  }, fromCaret ? 180 : 300);
+}
+function onCaretActivity() {
+  if (!syncOn || previewMode !== 'pdf' || paneBusy('editor')) return;
+  if (performance.now() < reverseJumpGuard) return; // don't bounce a PDF-click jump back
+  pdfSyncFromEditor({ fromCaret: true });
 }
 
 // ------------------------------------------------------------------ status

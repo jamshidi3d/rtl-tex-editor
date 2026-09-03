@@ -46,7 +46,7 @@ switch below).
 |---|---|
 | Open a file | click it in the tree (left) |
 | Preview pane | PDF viewer for `.tex` work; switches to a live **Markdown** viewer when a `.md` file is open (GFM tables, KaTeX `$…$` / `$$…$$` math, ` ```mermaid ` diagrams). **Build** switches it back to the PDF. |
-| Scroll sync | **⇅ sync** links editor and preview scrolling. Markdown is two-way (anchored on each block's source line); PDF is editor → page only, via SyncTeX (the embedded PDF viewer reports no scroll position, so the reverse isn't possible). State is remembered. |
+| Scroll sync | **⇅ sync** links editor and preview. Markdown: two-way, eased, anchored on each block's source line. PDF: moving the caret or scrolling the editor reveals & highlights the spot in the PDF (forward SyncTeX); **clicking in the PDF** opens the matching source file at that line and flashes it (reverse SyncTeX). Multi-file (`\include` / `\input`) aware. State is remembered. |
 | Change workspace folder | 📁 in the tree header (or click the folder name) → browse / paste a path / pick a recent one. Disabled with `--lock-root`. |
 | Save | `Ctrl/Cmd+S` (💾) — conflict-checked against disk mtime |
 | Build | **Build ▶** or `Ctrl/Cmd+B` — saves the open file first, then runs `latexmk` |

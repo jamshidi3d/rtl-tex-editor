@@ -129,46 +129,118 @@ async function buildTree(dir, depth, budget) {
   return out;
 }
 
-// Minimal forward SyncTeX lookup (source line -> PDF page). Parses the plain
-// text of a .synctex(.gz) file: `Input:<tag>:<path>` lines name the source
-// files; box/glue records `<type><tag>,<line>[,<col>]:<h>,<v>...` carry the
-// source line; `{<n>` / `}` bracket each page. We return the page of the record
-// whose source line is closest to the requested one.
-function synctexForward(text, want, wantLine) {
+// --- SyncTeX (hand-parsed; no `synctex` binary exists on Windows TeX Live) -----
+// A .synctex(.gz) is plain text: header (`Unit`, `Magnification`, `X/Y Offset`
+// in sp), `Input:<tag>:<path>` lines naming the source files, box/leaf records
+// `<type><tag>,<line>[,<col>]:<h>,<v>[:<W>,<H>,<D>]` (sp, `v` grows downward),
+// and `{<page>` / `}<page>` bracketing each sheet.
+const SYNCTEX_REC = /^([([<hvxkg$])(\d+),(\d+)(?:,\d+)?:(-?\d+),(-?\d+)(?::(-?\d+),(-?\d+),(-?\d+))?/;
+
+function synctexParse(text) {
   const lines = text.split('\n');
   const inputs = new Map();
-  for (const l of lines) {
-    const m = /^Input:(\d+):(.+?)\s*$/.exec(l);
-    if (m) inputs.set(Number(m[1]), m[2].replace(/\\/g, '/').toLowerCase());
-  }
-  const abs = want.abs.toLowerCase();
-  const rel = want.rel.toLowerCase();
-  const relDot = './' + rel;
-  const base = want.base.toLowerCase();
-  let tag = null;
-  for (const [t, p] of inputs) {
-    if (p === abs || p === rel || p === relDot || p.endsWith('/' + rel)) { tag = t; break; }
-  }
-  if (tag == null) for (const [t, p] of inputs) {
-    if (p.split('/').pop() === base) { tag = t; break; }
-  }
-  if (tag == null) return null;
-
-  const rec = /^[([<hvxkg$](\d+),(\d+)(?:,\d+)?:/;
-  let page = 0;
-  let best = null;
-  for (const l of lines) {
-    if (l.charCodeAt(0) === 123 /* { */) { const n = parseInt(l.slice(1), 10); if (Number.isFinite(n)) page = n; continue; }
-    const m = rec.exec(l);
-    if (!m || Number(m[1]) !== tag) continue;
-    const rl = Number(m[2]);
-    const d = Math.abs(rl - wantLine);
-    if (!best || d < best.d || (d === best.d && rl >= wantLine && best.rl < wantLine)) {
-      best = { d, rl, page };
-      if (d === 0) break;
+  let unit = 1, mag = 1000, xoff = 0, yoff = 0;
+  // The header (Output/Magnification/Unit/X Offset/Y Offset) sits after the
+  // full `Input:` list and just before `Content:` — scan until that marker.
+  let inHeader = true;
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    let m;
+    if ((m = /^Input:(\d+):(.+?)\s*$/.exec(l))) {
+      inputs.set(Number(m[1]), { raw: m[2], norm: m[2].replace(/\\/g, '/').toLowerCase() });
+    } else if (inHeader) {
+      if (l === 'Content:') inHeader = false;
+      else if ((m = /^Unit:([\d.]+)/.exec(l))) unit = parseFloat(m[1]) || 1;
+      else if ((m = /^Magnification:(\d+)/.exec(l))) mag = parseInt(m[1], 10) || 1000;
+      else if ((m = /^X Offset:(-?\d+)/.exec(l))) xoff = parseInt(m[1], 10) || 0;
+      else if ((m = /^Y Offset:(-?\d+)/.exec(l))) yoff = parseInt(m[1], 10) || 0;
     }
   }
-  return best ? { page: best.page, line: best.rl } : null;
+  return { lines, inputs, unit, mag, xoff, yoff };
+}
+
+// Pick the Input tag for the source file we want. `want.rel` is already
+// cwd-relative + '/'-joined + lowercased; xelatex records inputs as
+// `<cwd>/./chapters/ch1.tex` (abs, '/'-joined, literal './'), so strip a
+// leading './' and the compile cwd prefix before comparing tails.
+function synctexResolveTag(inputs, want, cwdNorm) {
+  const wRel = want.rel;
+  const strip = (p) => {
+    let s = p.replace(/^\.\//, '');
+    if (cwdNorm && (s.startsWith(cwdNorm + '/./') || s.startsWith(cwdNorm + '/'))) {
+      s = s.slice(cwdNorm.length + 1).replace(/^\.\//, '');
+    }
+    return s;
+  };
+  for (const [t, { norm }] of inputs) {
+    if (strip(norm) === wRel || norm === want.abs || norm === './' + wRel) return t;
+  }
+  const byBase = [];
+  for (const [t, { norm }] of inputs) if (norm.split('/').pop() === want.base) byBase.push(t);
+  return byBase.length === 1 ? byBase[0] : null;
+}
+
+// Forward: source line -> { page, line, h, v, W, H, D, unit, mag, xoff, yoff }.
+function synctexForward(text, want, wantLine) {
+  const P = synctexParse(text);
+  const tag = synctexResolveTag(P.inputs, want, want.cwdNorm);
+  if (tag == null) return null;
+  let page = 0;
+  let best = null;
+  for (const l of P.lines) {
+    if (l.charCodeAt(0) === 123 /* { */) { const n = parseInt(l.slice(1), 10); if (Number.isFinite(n)) page = n; continue; }
+    const m = SYNCTEX_REC.exec(l);
+    if (!m || Number(m[2]) !== tag) continue;
+    const rl = Number(m[3]);
+    const d = Math.abs(rl - wantLine);
+    const hasBox = m[7] != null;
+    if (!best || d < best.d
+        || (d === best.d && rl >= wantLine && best.rl < wantLine)
+        || (d === best.d && hasBox && !best.hasBox)) {
+      best = { d, rl, page, hasBox, h: +m[5], v: +m[6], W: m[7] != null ? +m[7] : null, H: m[8] != null ? +m[8] : null, D: m[9] != null ? +m[9] : null };
+      if (d === 0 && hasBox) break;
+    }
+  }
+  if (!best) return null;
+  return {
+    page: best.page, line: best.rl, h: best.h, v: best.v, W: best.W, H: best.H, D: best.D,
+    unit: P.unit, mag: P.mag, xoff: P.xoff, yoff: P.yoff,
+  };
+}
+
+// Reverse: (page, h_sp, v_sp) -> { tag, line, h, v }. Nearest record on that
+// sheet by |dv| then |dh|; a record whose [v-H .. v+D] band contains v_sp wins.
+function synctexReverse(text, wantPage, hSp, vSp) {
+  const P = synctexParse(text);
+  let page = 0;
+  let best = null;
+  for (const l of P.lines) {
+    const c = l.charCodeAt(0);
+    if (c === 123 /* { */) { const n = parseInt(l.slice(1), 10); if (Number.isFinite(n)) page = n; continue; }
+    if (c === 125 /* } */) { if (page === wantPage) break; page = 0; continue; }
+    if (page !== wantPage) continue;
+    const m = SYNCTEX_REC.exec(l);
+    if (!m) continue;
+    const v = +m[6], h = +m[5];
+    const H = m[8] != null ? +m[8] : 0;
+    const D = m[9] != null ? +m[9] : 0;
+    let dv = Math.abs(v - vSp);
+    if (vSp >= v - H - 6553 && vSp <= v + D + 6553) dv -= 1e9; // band hit wins
+    const dh = Math.abs(h - hSp);
+    if (!best || dv < best.dv || (dv === best.dv && dh < best.dh)) {
+      best = { dv, dh, tag: Number(m[2]), line: Number(m[3]), h, v };
+    }
+  }
+  return best ? { tag: best.tag, line: best.line, h: best.h, v: best.v } : null;
+}
+
+async function readSynctexText(bpdf) {
+  let gz;
+  for (const gp of [bpdf + '.synctex.gz', bpdf + '.synctex']) {
+    try { gz = await fsp.readFile(gp); break; } catch {}
+  }
+  if (!gz) return null;
+  return gz[0] === 0x1f && gz[1] === 0x8b ? zlib.gunzipSync(gz).toString('latin1') : gz.toString('latin1');
 }
 
 function run(cmd, cwd) {
@@ -233,24 +305,59 @@ async function api(req, res, pathname, query) {
     const cwd = path.dirname(texAbs);
     const bpdf = path.join(cwd, path.basename(texAbs).replace(/\.tex$/i, ''));
     const srcAbs = safeResolve(file);
-    let gz;
-    for (const gp of [bpdf + '.synctex.gz', bpdf + '.synctex']) {
-      try { gz = await fsp.readFile(gp); break; } catch {}
-    }
-    if (!gz) return json(res, 200, { ok: false, error: 'no .synctex.gz — build first' });
+    const text = await readSynctexText(bpdf);
+    if (!text) return json(res, 200, { ok: false, error: 'no .synctex.gz — build first' });
     let hit;
     try {
-      const text = gz[0] === 0x1f && gz[1] === 0x8b ? zlib.gunzipSync(gz).toString('latin1') : gz.toString('latin1');
       hit = synctexForward(text, {
-        abs: srcAbs.split(path.sep).join('/'),
-        rel: path.relative(cwd, srcAbs).split(path.sep).join('/'),
-        base: path.basename(srcAbs),
+        abs: srcAbs.split(path.sep).join('/').toLowerCase(),
+        rel: path.relative(cwd, srcAbs).split(path.sep).join('/').toLowerCase(),
+        base: path.basename(srcAbs).toLowerCase(),
+        cwdNorm: cwd.split(path.sep).join('/').toLowerCase(),
       }, line);
     } catch (e) {
       return json(res, 200, { ok: false, error: 'synctex parse: ' + e.message });
     }
     if (!hit) return json(res, 200, { ok: false, error: 'no record for that line' });
-    return json(res, 200, { ok: true, page: hit.page, srcLine: hit.line });
+    return json(res, 200, {
+      ok: true, page: hit.page, srcLine: hit.line,
+      h: hit.h, v: hit.v, W: hit.W, H: hit.H, D: hit.D,
+      unit: hit.unit, mag: hit.mag, xoff: hit.xoff, yoff: hit.yoff,
+    });
+  }
+
+  if (pathname === '/api/synctex-reverse' && req.method === 'GET') {
+    const main = query.main;
+    const page = parseInt(query.page, 10);
+    const hPt = parseFloat(query.h);
+    const vPt = parseFloat(query.v);
+    if (!main || !Number.isFinite(page) || !Number.isFinite(hPt) || !Number.isFinite(vPt)) {
+      return json(res, 400, { error: 'need main, page, h, v' });
+    }
+    const texAbs = safeResolve(main);
+    const cwd = path.dirname(texAbs);
+    const bpdf = path.join(cwd, path.basename(texAbs).replace(/\.tex$/i, ''));
+    const text = await readSynctexText(bpdf);
+    if (!text) return json(res, 200, { ok: false, error: 'no .synctex.gz — build first' });
+    let hit;
+    try {
+      const P = synctexParse(text);
+      const SP = 65536, M = P.mag / 1000;
+      const hSp = (hPt * SP / M - P.xoff) / P.unit;
+      const vSp = (vPt * SP / M - P.yoff) / P.unit;
+      const r = synctexReverse(text, page, hSp, vSp);
+      if (!r) return json(res, 200, { ok: false, error: 'no record near that spot' });
+      const inp = P.inputs.get(r.tag);
+      if (!inp) return json(res, 200, { ok: false, error: 'unknown input tag' });
+      let p = inp.raw.replace(/\\/g, '/').replace(/^\.\//, '');
+      const abs = /^([a-zA-Z]:)?\//.test(p) ? path.resolve(p) : path.resolve(cwd, p);
+      const rel = relOf(abs);
+      if (rel.startsWith('..')) return json(res, 200, { ok: false, error: 'outside root' });
+      hit = { file: rel, line: r.line };
+    } catch (e) {
+      return json(res, 200, { ok: false, error: 'synctex parse: ' + e.message });
+    }
+    return json(res, 200, { ok: true, file: hit.file, line: hit.line });
   }
 
   if (pathname === '/api/root' && req.method === 'POST') {
