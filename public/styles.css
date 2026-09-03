@@ -137,6 +137,51 @@ body {
   align-items: center; justify-content: center; color: #cfd2d6;
 }
 #pdfWrap.empty-shown .empty { display: flex; }
+[hidden] { display: none !important; }
+
+/* ---- Markdown preview ------------------------------------------------------ */
+.md-view {
+  position: absolute; inset: 0; overflow: auto;
+  background: var(--bg); color: var(--fg);
+  padding: 24px 28px; line-height: 1.65;
+  font: 14px/1.65 ui-sans-serif, system-ui, "Segoe UI", Roboto, "Vazirmatn", Tahoma, sans-serif;
+}
+.md-view > :first-child { margin-top: 0; }
+.md-view h1, .md-view h2, .md-view h3,
+.md-view h4, .md-view h5, .md-view h6 { line-height: 1.25; margin: 1.6em 0 .6em; font-weight: 600; }
+.md-view h1 { font-size: 1.8em; border-bottom: 1px solid var(--border); padding-bottom: .3em; }
+.md-view h2 { font-size: 1.45em; border-bottom: 1px solid var(--border); padding-bottom: .25em; }
+.md-view h3 { font-size: 1.2em; }
+.md-view p, .md-view ul, .md-view ol, .md-view blockquote, .md-view table, .md-view pre { margin: 0 0 1em; }
+.md-view ul, .md-view ol { padding-left: 1.7em; }
+.md-view li + li { margin-top: .2em; }
+.md-view a { color: var(--accent); }
+.md-view code {
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: .9em;
+  background: var(--bg-3); border-radius: 4px; padding: .12em .35em;
+}
+.md-view pre {
+  background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px 14px; overflow-x: auto;
+}
+.md-view pre code { background: none; padding: 0; font-size: .875em; }
+.md-view blockquote {
+  border-left: 3px solid var(--border); padding: .1em 0 .1em 1em; color: var(--fg-dim);
+}
+.md-view hr { border: 0; border-top: 1px solid var(--border); margin: 1.6em 0; }
+.md-view img { max-width: 100%; }
+.md-view table { border-collapse: collapse; display: block; width: max-content; max-width: 100%; overflow-x: auto; }
+.md-view th, .md-view td { border: 1px solid var(--border); padding: 6px 11px; text-align: left; }
+.md-view thead th { background: var(--bg-2); }
+.md-view tbody tr:nth-child(even) { background: var(--bg-2); }
+.md-view .katex-display { overflow-x: auto; overflow-y: hidden; padding: .3em 0; }
+.md-view .katex-error { color: var(--danger); }
+.md-view .mermaid { margin: 0 0 1em; text-align: center; }
+.md-view .mermaid svg { max-width: 100%; height: auto; }
+.md-view .md-err {
+  white-space: pre-wrap; color: var(--danger);
+  font-family: ui-monospace, Consolas, monospace; font-size: 12px;
+}
 
 /* ---- file tree --------------------------------------------------------------- */
 .tree ul { list-style: none; margin: 0; padding: 0; }

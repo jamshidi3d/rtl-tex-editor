@@ -58,12 +58,13 @@
 
       <section class="pane" id="pdfPane">
         <div class="pane-head">
-          <span>PDF preview</span>
+          <span id="previewTitle">PDF preview</span>
           <span class="grow"></span>
           <a id="openPdf" class="icon" target="_blank" title="open PDF in new tab">↗</a>
         </div>
         <div id="pdfWrap" class="empty-shown">
           <iframe id="pdf" title="PDF preview"></iframe>
+          <div id="mdView" class="md-view" hidden></div>
           <div id="pdfEmpty" class="empty">Build to see the PDF here.</div>
         </div>
       </section>

@@ -272,7 +272,7 @@ function initEditor() {
   cm.on('renderLine', (ed, lh) => pinOrder(lh, lh.text));
   applyDir();
   markAllCmdLines();
-  cm.on('change', () => { setDirty(isDirty()); });
+  cm.on('change', () => { setDirty(isDirty()); if (previewMode === 'md') scheduleMd(); });
   cm.on('changes', (ed, changes) => {
     let lo = Infinity;
     let hi = -1;
@@ -345,6 +345,8 @@ async function openFile(rel) {
   LS.set('lastFile', rel);
   markActiveInTree(rel);
   if (/\.bib$/i.test(rel)) refreshBibKeys(body.content);
+  if (MD_RE.test(rel)) { setPreviewMode('md'); renderMd(); }
+  else if (previewMode === 'md') setPreviewMode('pdf');
 }
 
 async function saveFile(force) {
@@ -383,6 +385,7 @@ async function build() {
       $('#pdf').src = src;
       $('#openPdf').href = src;
       $('#pdfWrap').classList.remove('empty-shown');
+      setPreviewMode('pdf');
     } else {
       setStatus('build failed', 'err');
       $('#logbar').classList.remove('collapsed');
@@ -406,6 +409,140 @@ function renderLog(text) {
   }
   el.scrollTop = el.scrollHeight;
 }
+
+// ------------------------------------------------------------------ markdown preview
+// The right pane is a PDF viewer for .tex work and a live Markdown viewer when a
+// .md file is open (GFM tables, KaTeX math, mermaid diagrams). The renderer
+// libraries are pulled from the CDN the first time they're needed.
+const MD_RE = /\.(md|markdown|mdown|mkd|mkdn|mdwn)$/i;
+const CDN = 'https://cdnjs.cloudflare.com/ajax/libs/';
+let previewMode = 'pdf';
+let mdTimer = null;
+const _assets = {};
+
+function loadAssets(key, urls) {
+  if (_assets[key]) return _assets[key];
+  _assets[key] = Promise.all(urls.map((u) => new Promise((res, rej) => {
+    let el;
+    if (u.endsWith('.css')) { el = document.createElement('link'); el.rel = 'stylesheet'; el.href = u; }
+    else { el = document.createElement('script'); el.src = u; }
+    el.onload = () => res();
+    el.onerror = () => rej(new Error('could not load ' + u));
+    document.head.appendChild(el);
+  })));
+  return _assets[key];
+}
+async function ensureMdLibs() {
+  await loadAssets('md-core', [
+    CDN + 'marked/12.0.2/marked.min.js',
+    CDN + 'dompurify/3.1.6/purify.min.js',
+    CDN + 'KaTeX/0.16.11/katex.min.css',
+    CDN + 'KaTeX/0.16.11/katex.min.js',
+  ]);
+  await loadAssets('md-katex-auto', [CDN + 'KaTeX/0.16.11/contrib/auto-render.min.js']);
+}
+
+function setPreviewMode(m) {
+  previewMode = m;
+  const md = m === 'md';
+  $('#pdf').hidden = md;
+  $('#mdView').hidden = !md;
+  $('#openPdf').style.display = md ? 'none' : '';
+  $('#previewTitle').textContent = md ? 'Markdown preview' : 'PDF preview';
+  $('#pdfWrap').classList.toggle('empty-shown', !md && !$('#pdf').src);
+}
+
+// Split off code and math spans before marked runs (so it can't eat the
+// backslashes / underscores inside math), then splice KaTeX back into the
+// sanitised DOM, skipping anything inside <code>/<pre>.
+function mdToDom(src) {
+  const S = '';
+  const code = [];
+  let s = src.replace(/(^|\n)([ \t]*)(```+|~~~+)[^\n]*\n[\s\S]*?\n\2\3[ \t]*(?=\n|$)/g,
+    (m) => `${S}C${code.push(m) - 1}${S}`);
+  s = s.replace(/`[^`\n]+`/g, (m) => `${S}C${code.push(m) - 1}${S}`);
+
+  const math = [];
+  const put = (x, d) => `${S}K${math.push({ x, d }) - 1}${S}`;
+  s = s.replace(/\$\$([\s\S]+?)\$\$/g, (_, x) => put(x, true));
+  s = s.replace(/\\\[([\s\S]+?)\\\]/g, (_, x) => put(x, true));
+  s = s.replace(/\\\(([\s\S]+?)\\\)/g, (_, x) => put(x, false));
+  s = s.replace(/(^|[^\\$])\$(?!\s)((?:\\.|[^$\\\n])+?)(?<!\s)\$(?!\d)/g,
+    (_, pre, x) => pre + put(x, false));
+
+  s = s.replace(new RegExp(S + 'C(\\d+)' + S, 'g'), (_, i) => code[+i]); // restore code for marked
+
+  let html = window.marked.parse(s, { gfm: true, breaks: false });
+  html = window.DOMPurify.sanitize(html, { ADD_ATTR: ['align'] });
+
+  const root = document.createElement('div');
+  root.innerHTML = html;
+
+  const reK = new RegExp(S + 'K(\\d+)' + S);
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const hits = [];
+  while (walker.nextNode()) {
+    const n = walker.currentNode;
+    if (!reK.test(n.nodeValue) || (n.parentElement && n.parentElement.closest('code, pre'))) continue;
+    hits.push(n);
+  }
+  const reKg = new RegExp(S + 'K(\\d+)' + S, 'g');
+  for (const n of hits) {
+    const frag = document.createDocumentFragment();
+    let last = 0; let m; const str = n.nodeValue;
+    reKg.lastIndex = 0;
+    while ((m = reKg.exec(str))) {
+      if (m.index > last) frag.appendChild(document.createTextNode(str.slice(last, m.index)));
+      const { x, d } = math[+m[1]];
+      const span = document.createElement('span');
+      try { span.innerHTML = window.katex.renderToString(x, { displayMode: d, throwOnError: false }); }
+      catch (e) { span.className = 'katex-error'; span.textContent = (d ? '$$' : '$') + x + (d ? '$$' : '$'); }
+      frag.appendChild(span);
+      last = m.index + m[0].length;
+    }
+    if (last < str.length) frag.appendChild(document.createTextNode(str.slice(last)));
+    n.replaceWith(frag);
+  }
+
+  let hasMermaid = false;
+  root.querySelectorAll('code.language-mermaid, code.lang-mermaid').forEach((c) => {
+    const host = c.closest('pre') || c;
+    const d = document.createElement('div');
+    d.className = 'mermaid';
+    d.textContent = c.textContent;
+    host.replaceWith(d);
+    hasMermaid = true;
+  });
+  return { root, hasMermaid };
+}
+
+async function renderMermaid(host) {
+  await loadAssets('mermaid', [CDN + 'mermaid/10.9.3/mermaid.min.js']);
+  window.mermaid.initialize({
+    startOnLoad: false, securityLevel: 'strict',
+    theme: app.dataset.theme === 'dark' ? 'dark' : 'default',
+  });
+  try { await window.mermaid.run({ nodes: host.querySelectorAll('.mermaid') }); }
+  catch (e) { /* mermaid writes its own error into the node */ }
+}
+
+async function renderMd() {
+  if (previewMode !== 'md') return;
+  const view = $('#mdView');
+  const src = cm.getValue();
+  try { await ensureMdLibs(); }
+  catch (e) { view.innerHTML = ''; view.append(Object.assign(document.createElement('div'), { className: 'md-err', textContent: 'preview libraries failed to load — ' + e.message })); return; }
+  if (previewMode !== 'md' || cm.getValue() !== src) return; // changed while loading
+  let out;
+  try { out = mdToDom(src); }
+  catch (e) { view.innerHTML = ''; view.append(Object.assign(document.createElement('div'), { className: 'md-err', textContent: 'render error — ' + e.message })); return; }
+  const top = view.scrollTop;
+  view.innerHTML = '';
+  view.append(out.root);
+  view.scrollTop = top;
+  if (out.hasMermaid) renderMermaid(view);
+}
+function scheduleMd() { clearTimeout(mdTimer); mdTimer = setTimeout(renderMd, 220); }
 
 // ------------------------------------------------------------------ status
 let statusTimer = null;
@@ -594,6 +731,7 @@ $('#theme').addEventListener('click', () => {
   LS.set('theme', next);
   $('#theme').textContent = next === 'dark' ? '☾ dark' : '☀ light';
   if (cm) cm.setOption('theme', cmTheme(next));
+  if (previewMode === 'md') renderMd(); // re-theme mermaid diagrams
 });
 $('#swap').addEventListener('click', () => {
   app.dataset.editorSide = app.dataset.editorSide === 'left' ? 'right' : 'left';

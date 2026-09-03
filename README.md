@@ -45,6 +45,7 @@ switch below).
 | Action | How |
 |---|---|
 | Open a file | click it in the tree (left) |
+| Preview pane | PDF viewer for `.tex` work; switches to a live **Markdown** viewer when a `.md` file is open (GFM tables, KaTeX `$…$` / `$$…$$` math, ` ```mermaid ` diagrams). **Build** switches it back to the PDF. |
 | Change workspace folder | 📁 in the tree header (or click the folder name) → browse / paste a path / pick a recent one. Disabled with `--lock-root`. |
 | Save | `Ctrl/Cmd+S` (💾) — conflict-checked against disk mtime |
 | Build | **Build ▶** or `Ctrl/Cmd+B` — saves the open file first, then runs `latexmk` |
@@ -68,6 +69,10 @@ the tree.
 - **PDF pane** = the browser's native PDF viewer in an `<iframe>`; it reloads
   after each successful build. No SyncTeX yet (see `bidi-extension.md` §5 for the
   `synctex view/edit` upgrade).
+- **Markdown pane** renders with `marked` + `DOMPurify`, `KaTeX`, and `mermaid`,
+  all loaded from cdnjs the first time a `.md` file is opened (mermaid is ~3 MB —
+  fetched only if a diagram is present). Math is protected from the Markdown
+  parser before rendering; code blocks are left untouched.
 - **CodeMirror 5 (5.65.16) loads from cdnjs** via plain `<script>`/`<link>` tags
   in `index.html` — needs network on first load (then cached). To vendor for
   offline use, drop the pinned files into `public/vendor/` and repoint the tags.
