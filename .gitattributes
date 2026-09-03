@@ -1,3 +1,7 @@
 # keep shell scripts LF so bash doesn't choke on CR; batch files CRLF
 *.sh   text eol=lf
 *.bat  text eol=crlf
+
+# generated: minified esbuild bundle of public/editor/src/ — don't diff it,
+# don't touch its line endings, hide it from language stats
+public/editor/cm6.bundle.js  -text -diff linguist-generated=true

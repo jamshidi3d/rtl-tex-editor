@@ -19,9 +19,10 @@ the tool itself needs no `npm install`.
 
 UI text is **DejaVu Sans**; Persian / RTL text is **IRANSansWeb**.
 
-Architecture follows `bidi-extension.md` §3-A / §5: a tiny Node host
-(`server.js`) does file I/O + `latexmk` + SyncTeX parsing; the browser
-(`public/`) is the editor.
+A tiny Node host (`server.js`) does file I/O + `latexmk` + SyncTeX parsing; the
+browser (`public/`) is the editor. Full design notes — the bidi problem, the
+CodeMirror 6 wiring, every `/api/*` route, the SyncTeX maths — are in
+[`ARCHITECTURE.md`](ARCHITECTURE.md).
 
 ---
 
@@ -69,28 +70,68 @@ switch below).
 
 ## Use
 
+**First run.** Point the launcher (or `--root`) at the folder that holds your
+thesis. Pick the main `.tex` in the **main** dropdown (it guesses `PhDThesis.tex`
+/ `main.tex`). Click a file in the tree to open it, hit **Build ▶**, and the PDF
+appears on the right.
+
+### Editing mixed RTL / LTR text
+
+The **dir:** button cycles three modes (remembered):
+
+- **auto** *(default)* — each line gets its own base direction. A line that
+  contains Persian and isn't a `\command` line is **RTL**: right-aligned, RTL
+  caret motion, RTL selection. `\section{…}` lines, blank lines, and pure
+  Latin/punctuation stay **LTR**. On an RTL line, every `\command`, `$…$` and
+  `{…}` run still reads **left-to-right** in place — inline math and commands are
+  not mirrored — and selection / arrow keys behave normally across them.
+- **rtl** — force every line right-to-left.
+- **ltr** — force every line left-to-right (plain code-editor behaviour).
+
+### Keyboard shortcuts
+
+| Key | Action |
+|---|---|
+| `Ctrl/Cmd+S` | save (conflict-checked against the file's mtime on disk) |
+| `Ctrl/Cmd+B` | build (saves the open file first) |
+| `Ctrl+Space` | completion popup |
+| `Enter` / `Tab` | accept the highlighted completion (otherwise `Enter` = newline) |
+| `Tab` / `Shift+Tab` | indent / dedent (or insert two spaces with no selection) |
+| `Ctrl/Cmd+F` | find panel — `Enter` / `Shift+Enter` step, `Esc` closes |
+| `Alt+I` | cycle PDF dark mode (`auto` → `on` → `off`) |
+| `Ctrl+Z` / `Ctrl+Y` | undo / redo |
+
+### Everything else
+
 | Action | How |
 |---|---|
 | Open a file | click it in the tree (left) |
-| Preview pane | PDF viewer for `.tex` work; switches to a live **Markdown** viewer when a `.md` file is open (GFM tables, KaTeX `$…$` / `$$…$$` math, ` ```mermaid ` diagrams). **Build** switches it back to the PDF. |
-| Scroll sync | **⇅ sync** links editor and preview. Markdown: two-way, eased, anchored on each block's source line. PDF: moving the caret or scrolling the editor reveals & highlights the spot in the PDF (forward SyncTeX); **clicking in the PDF** opens the matching source file at that line and flashes it (reverse SyncTeX). Multi-file (`\include` / `\input`) aware. State is remembered. |
 | Change workspace folder | 📁 in the tree header (or click the folder name) → browse / paste a path / pick a recent one. Disabled with `--lock-root`. |
-| Save | `Ctrl/Cmd+S` (💾) — conflict-checked against disk mtime |
-| Build | **Build ▶** or `Ctrl/Cmd+B` — saves the open file first, then runs `latexmk` |
 | Pick the main `.tex` | the **main** dropdown, or the *main* badge on a `.tex` row (defaults to `PhDThesis.tex`) |
+| Show `.aux` / log files | tick **aux** in the tree header |
 | Editor left / right of the PDF | **⇄ sides** |
 | Light / dark | **☾ / ☀** |
-| PDF dark mode | **Alt+I** cycles `auto` (follows the app theme — dark app → inverted PDF) → `on` → `off`. Remembered. |
-| Text direction | **dir:** cycles `auto` (per line — a non-command line with Persian is RTL, everything else LTR; default) → `rtl` (force every line RTL) → `ltr` (force every line LTR). In `auto`, each line's bidi order, alignment and arrow-key motion follow its own base direction. Choice is remembered. |
-| Accept a completion | **Enter** / **Tab** / click while the popup is open (otherwise Enter is a newline) |
-| Find in file | **Ctrl/Cmd+F** opens a search panel (Enter / Shift+Enter to step, Esc to close) |
-| Resize | drag the bars between sidebar / editor / PDF |
-| Build log | bar at the bottom (auto-opens on failure) |
+| Open the raw PDF | **↗** in the preview header (browser's own viewer — print / download / find) |
+| Resize panes | drag the bars between sidebar / editor / PDF |
+| Build log | bar at the bottom (auto-opens on a failed build) |
 
-Completion (local, from `bidi-extension.md` §4 tier 3): LaTeX commands +
-environments, `\newcommand` / `\DeclareMathOperator` macros parsed from the open
-file, and `\cite{…}` keys scanned from the first `references.bib` / `*.bib` in
-the tree.
+**Completion** (`Ctrl+Space`) is local: LaTeX commands + environments, any
+`\newcommand` / `\DeclareMathOperator` macros in the open file, and `\cite{…}`
+keys from the first `references.bib` / `*.bib` in the tree. Accepting an
+environment drops in the whole `\begin…\end` block with the caret on an indented
+body line (list environments prefill `\item`); accepting an argument-taking
+command (`\section`, `\ref`, `\textbf`, `\frac`, …) drops in its braces with the
+caret inside.
+
+**Scroll sync** (**⇅**) links editor and preview. Markdown: two-way, eased,
+anchored on each block's source line. PDF: moving the caret or scrolling the
+editor reveals and highlights the spot in the PDF (forward SyncTeX); **clicking
+in the PDF** opens the matching source file at that line and flashes it (reverse
+SyncTeX). Multi-file (`\include` / `\input`) aware. State is remembered.
+
+The **preview pane** is the PDF viewer for `.tex` work and switches to a live
+**Markdown** viewer (GFM tables, KaTeX `$…$` / `$$…$$` math, ` ```mermaid `
+diagrams) when a `.md` file is open; **Build** switches it back.
 
 ---
 
@@ -107,17 +148,17 @@ the tree.
   all loaded from cdnjs the first time a `.md` file is opened (mermaid is ~3 MB —
   fetched only if a diagram is present). Math is protected from the Markdown
   parser before rendering; code blocks are left untouched.
-- **CodeMirror 6 is bundled locally** — `public/editor/src/index.js` is built
-  with esbuild to `public/editor/cm6.bundle.js` (committed, ~370 KB), loaded by
-  one plain `<script>` in `index.html`. No CDN, works offline. Rebuild with
-  `npm install && npm run build:editor`. The bundle carries the stex mode
-  (`@codemirror/legacy-modes`), autocomplete, search, and the RTL/bidi-isolate
-  wiring; its theme + syntax colours are CSS-var driven so the light/dark toggle
-  needs no reconfigure.
+- **CodeMirror 6 is bundled locally** — `public/editor/src/index.js` → esbuild →
+  `public/editor/cm6.bundle.js` (committed, ~360 KB), one plain `<script>`. No
+  CDN, works offline. Per-line base direction (`EditorView.perLineTextDirection`)
+  + LTR bidi isolates (`bidiIsolate` / `bidiIsolatedRanges`) give inline
+  commands and math that read left-to-right inside RTL lines with selection
+  intact — see [`ARCHITECTURE.md`](ARCHITECTURE.md) §2, §7. Rebuild with
+  `npm install && npm run build:editor`; running the tool needs no `npm install`.
 - **Fonts** (DejaVu Sans, IRANSansWeb) load from jsDelivr via `@font-face` in
   `styles.css`, `font-display: swap` — offline you just get the system fallback.
 - `server.js` runs `latexmk -shell-escape` and can read/write anywhere under
   `--root`. It binds to `127.0.0.1` only. Point `--root` at a folder you trust.
-- Single-file editor: no folding-config, multi-cursor niceties, minimap, or
-  other VS Code extensions inside this pane — by design (§7 of the doc).
-- Files > 5 MB are not opened; aux files are hidden unless **aux** is ticked.
+- Single-file editor: no code folding, multi-cursor visuals, or minimap — by
+  design. Files > 5 MB are not opened; `.aux` / log files are hidden unless
+  **aux** is ticked.
