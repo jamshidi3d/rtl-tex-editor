@@ -458,21 +458,24 @@ function setPreviewMode(m) {
 }
 
 // Turn Markdown source into a DOM tree.
-//  - code fences / inline code and math ($…$, $$…$$, \(…\), \[…\]) are pulled
-//    out before marked parses, so it can't mangle the backslashes / underscores;
-//    math is spliced back as KaTeX afterwards, skipping anything in <code>/<pre>.
+//  - fenced / inline code and math ($…$, $$…$$, \(…\), \[…\]) are pulled out
+//    before marked parses (so it can't mangle the backslashes / underscores);
+//    code is put back before parsing, math is spliced in as KaTeX afterwards,
+//    skipping anything in <code>/<pre>.
 //  - every top-level block gets data-src-line (0-based) for editor <-> preview
-//    scroll sync; math placeholders keep the newline count of what they replaced
-//    so those line numbers stay aligned with the editor.
+//    scroll sync. The line is found by locating the token's raw text in the
+//    (line-count-preserving) source, which is robust to link-ref definitions
+//    and other tokens marked drops from the stream.
 function mdToDom(src) {
   const S = SENT;
   const code = [];
-  let s = src.replace(/(^|\n)([ \t]*)(```+|~~~+)[^\n]*\n[\s\S]*?\n\2\3[ \t]*(?=\n|$)/g,
-    (m) => `${S}C${code.push(m) - 1}${S}`);
-  s = s.replace(/`[^`\n]+`/g, (m) => `${S}C${code.push(m) - 1}${S}`);
+  let s = src.replace(
+    /(^|\n)([ \t]{0,3})(```+|~~~+)[^\n]*\n[\s\S]*?(?:\n\2\3[ \t]*)(?=$|\n)/g,
+    (m, lead) => lead + S + 'C' + (code.push(m.slice(lead.length)) - 1) + S);
+  s = s.replace(/`[^`\n]+`/g, (m) => S + 'C' + (code.push(m) - 1) + S);
 
   const math = [];
-  const put = (x, d) => `${S}K${math.push({ x, d }) - 1}${S}` + '\n'.repeat((x.match(/\n/g) || []).length);
+  const put = (x, d) => S + 'K' + (math.push({ x, d }) - 1) + S + '\n'.repeat((x.match(/\n/g) || []).length);
   s = s.replace(/\$\$([\s\S]+?)\$\$/g, (_, x) => put(x, true));
   s = s.replace(/\\\[([\s\S]+?)\\\]/g, (_, x) => put(x, true));
   s = s.replace(/\\\(([\s\S]+?)\\\)/g, (_, x) => put(x, false));
@@ -483,14 +486,17 @@ function mdToDom(src) {
 
   const M = window.marked;
   const toks = M.lexer(s);
-  let line = 0;
   const parts = [];
+  let from = 0;
   for (const tok of toks) {
-    const start = line;
-    line += (tok.raw.match(/\n/g) || []).length;
-    if (tok.type === 'space') continue;
-    let frag = M.parser([tok]);
-    frag = frag.replace(/^(\s*)(<[a-zA-Z][\w:-]*)/, `$1$2 data-src-line="${start}"`);
+    if (tok.type === 'space') { from += tok.raw.length; continue; }
+    const at = s.indexOf(tok.raw, from);
+    const before = at >= 0 ? s.slice(0, at) : s.slice(0, from);
+    const startLine = (before.match(/\n/g) || []).length;
+    if (at >= 0) from = at + tok.raw.length;
+    let frag;
+    try { frag = M.parser([tok]); } catch (e) { continue; }
+    frag = frag.replace(/^(\s*)(<[a-zA-Z][\w:-]*)/, `$1$2 data-src-line="${startLine}"`);
     parts.push(frag);
   }
   let html = window.DOMPurify.sanitize(parts.join('\n'), { ADD_ATTR: ['align'] });
@@ -593,9 +599,16 @@ function syncFromEditor() {
   if (previewMode === 'md') mdSyncFromEditor();
   else pdfSyncFromEditor();
 }
+const maxScroll = (el) => Math.max(1, el.scrollHeight - el.clientHeight);
 function mdSyncFromEditor() {
-  if (previewMode !== 'md' || !mdAnchors.length) return;
+  if (previewMode !== 'md') return;
   const view = $('#mdView');
+  if (!mdAnchors.length) { // no anchors (render failed / empty) -> proportional
+    const si = cm.getScrollInfo();
+    lockSync();
+    view.scrollTop = (si.top / Math.max(1, si.height - si.clientHeight)) * maxScroll(view);
+    return;
+  }
   const top = editorTopLine();
   let i = 0;
   while (i + 1 < mdAnchors.length && mdAnchors[i + 1].line <= top) i++;
@@ -609,8 +622,14 @@ function mdSyncFromEditor() {
   view.scrollTop = aTop + (bTop - aTop) * frac - 6;
 }
 function mdSyncFromPreview() {
-  if (!syncOn || isLocked() || previewMode !== 'md' || !mdAnchors.length) return;
+  if (!syncOn || isLocked() || previewMode !== 'md') return;
   const view = $('#mdView');
+  if (!mdAnchors.length) {
+    const si = cm.getScrollInfo();
+    lockSync();
+    cm.scrollTo(null, (view.scrollTop / maxScroll(view)) * Math.max(1, si.height - si.clientHeight));
+    return;
+  }
   const y = view.scrollTop + 6;
   let i = 0;
   while (i + 1 < mdAnchors.length && mdAnchors[i + 1].el.offsetTop <= y) i++;

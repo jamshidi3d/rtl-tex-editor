@@ -320,7 +320,13 @@ async function api(req, res, pathname, query) {
     const cmd =
       `latexmk -${ENGINE} -synctex=1 -shell-escape -interaction=nonstopmode -halt-on-error ` +
       `-file-line-error "${base}"`;
-    const r = await run(cmd, cwd);
+    let r = await run(cmd, cwd);
+    // latexmk latches a previous failure and then refuses to rebuild ("gave an
+    // error in previous invocation") even after the source is fixed — force one
+    // real run to clear it (or to surface the actual LaTeX error).
+    if (r.code !== 0 && /gave an error in previous invocation/i.test(r.out)) {
+      r = await run(cmd.replace(/^latexmk /, 'latexmk -g '), cwd);
+    }
     const pdfAbs = path.join(cwd, base + '.pdf');
     let pdfRel = null;
     try {
