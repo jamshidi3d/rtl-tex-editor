@@ -441,7 +441,7 @@ function loadAssets(key, urls) {
   _assets[key] = Promise.all(urls.map((u) => new Promise((res, rej) => {
     const css = u.endsWith('.css');
     const el = document.createElement(css ? 'link' : 'script');
-    if (css) { el.rel = 'stylesheet'; el.href = u; } else { el.src = u; }
+    if (css) { el.rel = 'stylesheet'; el.href = u; } else { el.src = u; el.async = false; }
     // a stylesheet that never fires onload must not stall the whole load
     const to = setTimeout(() => (css ? res() : rej(new Error('timed out loading ' + u))), 20000);
     el.onload = () => { clearTimeout(to); res(); };
@@ -611,13 +611,18 @@ function debounce(fn, ms) {
 }
 function ensurePdfLibs() {
   if (pdfjsReady) return pdfjsReady;
-  pdfjsReady = loadAssets('pdfjs', [
-    CDN + 'pdf.js/' + PDFJS + '/pdf.min.js',
-    CDN + 'pdf.js/' + PDFJS + '/pdf_viewer.min.js',
-    CDN + 'pdf.js/' + PDFJS + '/pdf_viewer.min.css',
-  ]).then(() => {
-    window.pdfjsLib.GlobalWorkerOptions.workerSrc = '/api/pdfjs-worker';
-  });
+  // pdf_viewer's webpack build grabs `globalThis.pdfjsLib` the moment it runs
+  // and caches it — so pdf.min.js MUST be fully loaded first, otherwise the
+  // viewer captures `undefined` (=> "f is undefined / AnnotationEditorType").
+  pdfjsReady = loadAssets('pdfjs-core', [CDN + 'pdf.js/' + PDFJS + '/pdf.min.js'])
+    .then(() => loadAssets('pdfjs-viewer', [
+      CDN + 'pdf.js/' + PDFJS + '/pdf_viewer.min.js',
+      CDN + 'pdf.js/' + PDFJS + '/pdf_viewer.min.css',
+    ]))
+    .then(() => {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = '/api/pdfjs-worker';
+    });
+  pdfjsReady.catch(() => { pdfjsReady = null; }); // allow retry on next build
   return pdfjsReady;
 }
 function initPdfViewer() {
