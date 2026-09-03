@@ -134,6 +134,7 @@ async function buildTree(dir, depth, budget) {
 // in sp), `Input:<tag>:<path>` lines naming the source files, box/leaf records
 // `<type><tag>,<line>[,<col>]:<h>,<v>[:<W>,<H>,<D>]` (sp, `v` grows downward),
 // and `{<page>` / `}<page>` bracketing each sheet.
+// capture groups: 1=type 2=tag 3=line 4=h 5=v 6=W 7=H 8=D  (the `,col` is non-capturing)
 const SYNCTEX_REC = /^([([<hvxkg$])(\d+),(\d+)(?:,\d+)?:(-?\d+),(-?\d+)(?::(-?\d+),(-?\d+),(-?\d+))?/;
 
 function synctexParse(text) {
@@ -193,11 +194,17 @@ function synctexForward(text, want, wantLine) {
     if (!m || Number(m[2]) !== tag) continue;
     const rl = Number(m[3]);
     const d = Math.abs(rl - wantLine);
-    const hasBox = m[7] != null;
+    const hasBox = m[6] != null;
     if (!best || d < best.d
         || (d === best.d && rl >= wantLine && best.rl < wantLine)
         || (d === best.d && hasBox && !best.hasBox)) {
-      best = { d, rl, page, hasBox, h: +m[5], v: +m[6], W: m[7] != null ? +m[7] : null, H: m[8] != null ? +m[8] : null, D: m[9] != null ? +m[9] : null };
+      best = {
+        d, rl, page, hasBox,
+        h: +m[4], v: +m[5],
+        W: m[6] != null ? +m[6] : null,
+        H: m[7] != null ? +m[7] : null,
+        D: m[8] != null ? +m[8] : null,
+      };
       if (d === 0 && hasBox) break;
     }
   }
@@ -208,29 +215,40 @@ function synctexForward(text, want, wantLine) {
   };
 }
 
-// Reverse: (page, h_sp, v_sp) -> { tag, line, h, v }. Nearest record on that
-// sheet by |dv| then |dh|; a record whose [v-H .. v+D] band contains v_sp wins.
+// Reverse: (page, h_sp, v_sp) -> { tag, line, h, v }. Match against LEAF records
+// only (kern/glue/math/void boxes sit on a real baseline); the enclosing
+// `(`/`[` boxes can span most of the page — e.g. the master file's page vbox —
+// and would otherwise swallow every click. Nearest by |dv| then |dh|; among
+// equals, the smaller box wins. Falls back to boxes only if a page has no
+// leaves at all.
 function synctexReverse(text, wantPage, hSp, vSp) {
   const P = synctexParse(text);
-  let page = 0;
-  let best = null;
-  for (const l of P.lines) {
-    const c = l.charCodeAt(0);
-    if (c === 123 /* { */) { const n = parseInt(l.slice(1), 10); if (Number.isFinite(n)) page = n; continue; }
-    if (c === 125 /* } */) { if (page === wantPage) break; page = 0; continue; }
-    if (page !== wantPage) continue;
-    const m = SYNCTEX_REC.exec(l);
-    if (!m) continue;
-    const v = +m[6], h = +m[5];
-    const H = m[8] != null ? +m[8] : 0;
-    const D = m[9] != null ? +m[9] : 0;
-    let dv = Math.abs(v - vSp);
-    if (vSp >= v - H - 6553 && vSp <= v + D + 6553) dv -= 1e9; // band hit wins
-    const dh = Math.abs(h - hSp);
-    if (!best || dv < best.dv || (dv === best.dv && dh < best.dh)) {
-      best = { dv, dh, tag: Number(m[2]), line: Number(m[3]), h, v };
+  const scan = (leavesOnly) => {
+    let page = 0;
+    let best = null;
+    for (const l of P.lines) {
+      const c = l.charCodeAt(0);
+      if (c === 123 /* { */) { const n = parseInt(l.slice(1), 10); if (Number.isFinite(n)) page = n; continue; }
+      if (c === 125 /* } */) { if (page === wantPage) return best; page = 0; continue; }
+      if (page !== wantPage) continue;
+      if (leavesOnly && (c === 40 /* ( */ || c === 91 /* [ */)) continue;
+      const m = SYNCTEX_REC.exec(l);
+      if (!m) continue;
+      const h = +m[4], v = +m[5];
+      const W = m[6] != null ? +m[6] : 0;
+      const H = m[7] != null ? +m[7] : 0;
+      const area = W + H; // ~ record extent, for tie-break
+      const dv = Math.abs(v - vSp);
+      const dh = Math.abs(h - hSp);
+      if (!best || dv < best.dv
+          || (dv === best.dv && dh < best.dh)
+          || (dv === best.dv && dh === best.dh && area < best.area)) {
+        best = { dv, dh, area, tag: Number(m[2]), line: Number(m[3]), h, v };
+      }
     }
-  }
+    return best;
+  };
+  const best = scan(true) || scan(false);
   return best ? { tag: best.tag, line: best.line, h: best.h, v: best.v } : null;
 }
 
