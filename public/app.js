@@ -1,7 +1,9 @@
-/* RTL TeX Editor — browser front-end (CodeMirror 5, plain script).
- * Editor with per-line RTL/LTR direction, stex syntax highlighting, live pdf.js
- * preview with two-way SyncTeX, folder tree + folder switcher.
- * Talks to server.js over /api/*.
+/* RTL TeX Editor — browser front-end.
+ * CodeMirror 6 editor (bundled at editor/cm6.bundle.js -> window.RTLCM) with
+ * native per-line RTL/LTR direction and LTR bidi isolates for inline
+ * \commands / $…$ / {…}, stex syntax highlighting, a live pdf.js preview with
+ * two-way SyncTeX, a folder tree + folder switcher. Talks to server.js over
+ * /api/*.
  */
 (function () {
 'use strict';
@@ -44,339 +46,84 @@ function collectMacros(text) {
 }
 
 // ------------------------------------------------------------------ editor
-let cm;
+// The editor is CodeMirror 6, assembled in editor/cm6.bundle.js (window.RTLCM).
+// `ed` is the handle it returns; `view` is the raw EditorView. CM6 does
+// per-line base direction natively and lets the bundle mark \command / $…$ /
+// {…} runs on RTL lines as LTR bidi isolates, so they read left-to-right while
+// the Persian sentence around them still reads RTL — caret and selection stay
+// correct. The helpers below bridge CM5-style {line,ch} <-> CM6 offsets for the
+// sync + reverse-SyncTeX code further down.
+let ed = null;
+let view = null;
 
-// --- per-line bidi -------------------------------------------------------------
-// CodeMirror 5 has one editor-wide `direction`; it has no per-line base
-// direction for caret motion. To edit mixed Persian/LaTeX correctly we:
-//   1. keep the editor `direction` = "ltr" (so pure-LaTeX lines stay no-bidi);
-//   2. compute each line's bidi order with ITS OWN base direction and pin it on
-//      the line handle (`line.order`), so rendering + caret geometry match the
-//      per-line CSS `direction` (see markCmdLine / styles.css `.rtl-line`);
-//   3. flip `cm.doc.direction` for the duration of a cursor-motion command to
-//      the line the caret sits on, so CodeMirror's motion math (which reads
-//      `cm.doc.direction`) agrees with how that line is drawn (dirAwareMotion).
-// `bidiOrder` below is CodeMirror 5's own bidiOrdering, inlined so we can call
-// it with an explicit base direction. Returns `false` for a fully-LTR line, else
-// an array of {level, from, to} spans in visual order. (CodeMirror MIT licence.)
-const lst = (a) => a[a.length - 1];
-const bidiOrder = (function () {
-  const lowTypes = 'bbbbbbbbbtstwsbbbbbbbbbbbbbbssstwNN%%%NNNNNN,N,N1111111111NNNNNNNLLLLLLLLLLLLLLLLLLLLLLLLLLNNNNNNLLLLLLLLLLLLLLLLLLLLLLLLLLNNNNbbbbbbsbbbbbbbbbbbbbbbbbbbbbbbbbb,N%%%%NNNNLNNNNN%%11NLNNN1LNNNNNLLLLLLLLLLLLLLLLLLLLLLLNLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLN';
-  const arabicTypes = 'nnnnnnNNr%%r,rNNmmmmmmmmmmmrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrmmmmmmmmmmmmmmmmmmmmmnnnnnnnnnn%nnrrrmrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrmmmmmmmnNmmmmmmrrmmNmmmmrr1111111111';
-  function charType(code) {
-    if (code <= 0xf7) return lowTypes.charAt(code);
-    if (code >= 0x590 && code <= 0x5f4) return 'R';
-    if (code >= 0x600 && code <= 0x6f9) return arabicTypes.charAt(code - 0x600);
-    if (code >= 0x6ee && code <= 0x8ac) return 'r';
-    if (code >= 0x2000 && code <= 0x200b) return 'w';
-    if (code === 0x200c) return 'b';
-    return 'L';
-  }
-  const bidiRE = /[֐-״؀-ۿ܀-ࢬ]/;
-  const isNeutral = /[stwN]/;
-  const isStrong = /[LRr]/;
-  const countsAsLeft = /[Lb1n]/;
-  const countsAsNum = /[1n]/;
-  return function (str, direction) {
-    const outerType = direction === 'ltr' ? 'L' : 'R';
-    if (str.length === 0 || (direction === 'ltr' && !bidiRE.test(str))) return false;
-    const len = str.length;
-    const types = [];
-    for (let i = 0; i < len; ++i) types.push(charType(str.charCodeAt(i)));
-    for (let i = 0, prev = outerType; i < len; ++i) {
-      const t = types[i];
-      if (t === 'm') types[i] = prev; else prev = t;
-    }
-    for (let i = 0, cur = outerType; i < len; ++i) {
-      const t = types[i];
-      if (t === '1' && cur === 'r') types[i] = 'n';
-      else if (isStrong.test(t)) { cur = t; if (t === 'r') types[i] = 'R'; }
-    }
-    for (let i = 1, prev = types[0]; i < len - 1; ++i) {
-      const t = types[i];
-      if (t === '+' && prev === '1' && types[i + 1] === '1') types[i] = '1';
-      else if (t === ',' && prev === types[i + 1] && (prev === '1' || prev === 'n')) types[i] = prev;
-      prev = t;
-    }
-    for (let i = 0; i < len; ++i) {
-      const t = types[i];
-      if (t === ',') types[i] = 'N';
-      else if (t === '%') {
-        let end;
-        for (end = i + 1; end < len && types[end] === '%'; ++end) { /* scan */ }
-        const replace = (i && types[i - 1] === '!') || (end < len && types[end] === '1') ? '1' : 'N';
-        for (let j = i; j < end; ++j) types[j] = replace;
-        i = end - 1;
-      }
-    }
-    for (let i = 0, cur = outerType; i < len; ++i) {
-      const t = types[i];
-      if (cur === 'L' && t === '1') types[i] = 'L';
-      else if (isStrong.test(t)) cur = t;
-    }
-    for (let i = 0; i < len; ++i) {
-      if (isNeutral.test(types[i])) {
-        let end;
-        for (end = i + 1; end < len && isNeutral.test(types[end]); ++end) { /* scan */ }
-        const before = (i ? types[i - 1] : outerType) === 'L';
-        const after = (end < len ? types[end] : outerType) === 'L';
-        const replace = before === after ? (before ? 'L' : 'R') : outerType;
-        for (let j = i; j < end; ++j) types[j] = replace;
-        i = end - 1;
-      }
-    }
-    const order = [];
-    let m;
-    for (let i = 0; i < len;) {
-      if (countsAsLeft.test(types[i])) {
-        const start = i;
-        for (++i; i < len && countsAsLeft.test(types[i]); ++i) { /* scan */ }
-        order.push({ level: 0, from: start, to: i });
-      } else {
-        let pos = i;
-        let at = order.length;
-        const isRTL = direction === 'rtl' ? 1 : 0;
-        for (++i; i < len && types[i] !== 'L'; ++i) { /* scan */ }
-        for (let j = pos; j < i;) {
-          if (countsAsNum.test(types[j])) {
-            if (pos < j) { order.splice(at, 0, { level: 1, from: pos, to: j }); at += isRTL; }
-            const nstart = j;
-            for (++j; j < i && countsAsNum.test(types[j]); ++j) { /* scan */ }
-            order.splice(at, 0, { level: 2, from: nstart, to: j });
-            at += isRTL;
-            pos = j;
-          } else ++j;
-        }
-        if (pos < i) order.splice(at, 0, { level: 1, from: pos, to: i });
-      }
-    }
-    if (direction === 'ltr') {
-      if (order[0].level === 1 && (m = str.match(/^\s+/))) {
-        order[0].from = m[0].length;
-        order.unshift({ level: 0, from: 0, to: m[0].length });
-      }
-      if (lst(order).level === 1 && (m = str.match(/\s+$/))) {
-        lst(order).to -= m[0].length;
-        order.push({ level: 0, from: len - m[0].length, to: len });
-      }
-    }
-    return direction === 'rtl' ? order.reverse() : order;
-  };
-})();
-
-function applyDir() {
-  if (!cm) return;
-  const mode = LS.get('dir', 'auto');
-  cm.setOption('direction', 'ltr');
-  const w = cm.getWrapperElement().classList;
-  w.toggle('force-rtl', mode === 'rtl');
-  w.toggle('force-ltr', mode === 'ltr');
-  w.remove('CodeMirror-rtl');
-  cm.refresh();
+const docText = () => view.state.doc.toString();
+function offAt(line, ch) {
+  const d = view.state.doc;
+  const L = d.line(Math.max(1, Math.min(d.lines, (line | 0) + 1)));
+  return Math.max(L.from, Math.min(L.to, L.from + (ch | 0)));
 }
-const cmTheme = (name) => (name === 'dark' ? 'material-darker' : 'default');
-
-// Accepting an env in `\begin{…}` drops in the whole block; the caret lands on
-// an indented body line (list envs get `\item`). `\end{…}` just closes the brace.
-function expandEnv(cm, data, comp) {
-  const P = CodeMirror.Pos;
-  const env = comp.text;
-  const line = data.from.line;
-  const indent = /^\s*/.exec(cm.getLine(line))[0];
-  const step = ' '.repeat(cm.getOption('indentUnit') || 2);
-  const body = /^(itemize|enumerate|description)\*?$/.test(env) ? step + '\\item ' : step;
-  let to = data.to;
-  if (cm.getRange(to, P(to.line, to.ch + 1)) === '}') to = P(to.line, to.ch + 1); // eat a pre-typed }
-  cm.replaceRange(env + '}\n' + indent + body + '\n' + indent + '\\end{' + env + '}', data.from, to, 'complete');
-  cm.setCursor(P(line + 1, (indent + body).length));
+function posAt(off) {
+  const L = view.state.doc.lineAt(off);
+  return { line: L.number - 1, ch: off - L.from };
 }
-
-// Accepting an argument-taking command drops in its braces with the caret inside.
-function expandCmd(cm, data, comp, pair) {
-  const P = CodeMirror.Pos;
-  const cmd = comp.text;
-  const to = data.to;
-  if (cm.getRange(to, P(to.line, to.ch + 1)) === '{') { // already followed by a brace
-    cm.replaceRange(cmd, data.from, to, 'complete');
-    cm.setCursor(P(data.from.line, data.from.ch + cmd.length));
-    return;
-  }
-  cm.replaceRange(cmd + pair, data.from, to, 'complete');
-  cm.setCursor(P(data.from.line, data.from.ch + cmd.length + 1));
+function setCaret(line, ch) {
+  view.dispatch({ selection: { anchor: offAt(line, ch || 0) }, scrollIntoView: true });
 }
-
-function latexHint(editor) {
-  const pos = editor.getCursor();
-  const before = editor.getLine(pos.line).slice(0, pos.ch);
-  const P = CodeMirror.Pos;
-  let m;
-  if ((m = /\\(?:cite|citep|citet|parencite|textcite|nocite|autocite)\{([^}]*)$/.exec(before))) {
-    const w = m[1].toLowerCase();
-    const list = BIB_KEYS.filter((k) => k.toLowerCase().includes(w));
-    return { list: list.length ? list : BIB_KEYS, from: P(pos.line, pos.ch - m[1].length), to: pos };
-  }
-  if ((m = /\\(begin|end)\{([a-zA-Z*]*)$/.exec(before))) {
-    const kw = m[1];
-    const w = m[2];
-    const envs = LATEX_ENVS.filter((e) => e.startsWith(w));
-    const from = P(pos.line, pos.ch - w.length);
-    if (kw === 'end') return { list: envs, from, to: pos };
-    return { list: envs.map((env) => ({ text: env, displayText: env, hint: expandEnv })), from, to: pos };
-  }
-  if ((m = /\\([a-zA-Z]*)$/.exec(before))) {
-    const w = m[1];
-    const all = [...new Set(LATEX_CMDS.concat(collectMacros(editor.getValue())))];
-    const hits = all.filter((c) => c.slice(1).startsWith(w));
-    const list = (hits.length ? hits : all).map((c) => {
-      const name = c.slice(1);
-      if (name === 'frac') return { text: c, displayText: c, hint: (cm, d, x) => expandCmd(cm, d, x, '{}{}') };
-      if (ARG_CMDS.has(name)) return { text: c, displayText: c, hint: (cm, d, x) => expandCmd(cm, d, x, '{}') };
-      return c;
-    });
-    return { list, from: P(pos.line, pos.ch - w.length - 1), to: pos };
-  }
-  return null;
-}
-
-// Pin a line's bidi order to one computed with its own base direction, so its
-// geometry matches the per-line CSS `direction`. CodeMirror nulls `line.order`
-// on every text change; we recompute here (and whenever the base flips).
-function pinOrder(lh, text) {
-  if (!lh) return;
-  const base = lineIsRtl(text || '') ? 'rtl' : 'ltr';
-  if (lh._ob === base && lh.order !== null && lh.order !== undefined) return;
-  lh.order = bidiOrder(text || '', base);
-  lh._ob = base;
-}
-
-// Run a stock cursor-motion command with `cm.doc.direction` temporarily set to
-// the base direction of the line the caret is on, so CodeMirror's motion math
-// lines up with how that line is drawn (fixes arrows on a Latin run inside an
-// RTL line, and End/Home on RTL lines). Registered under `go…` names so
-// CodeMirror's Shift-key fallback still extends the selection through them.
-function dirAwareMotion(ed, name) {
-  const ln = ed.getCursor('head').line;
-  const base = lineIsRtl(ed.getLine(ln) || '') ? 'rtl' : 'ltr';
-
-  // Plain Left/Right (no Shift) on a non-empty selection collapses the caret to
-  // the *visual* end the arrow points at — on an RTL line the from()/to() ends
-  // are swapped, so CodeMirror's built-in "collapse to from()/to()" feels wrong.
-  if ((name === 'goCharLeft' || name === 'goCharRight')
-      && !ed.display.shift && !ed.doc.extend && ed.somethingSelected()) {
-    const goLeft = name === 'goCharLeft';
-    ed.setSelections(ed.listSelections().map((r) => {
-      if (CodeMirror.cmpPos(r.anchor, r.head) === 0) return r;
-      const lo = CodeMirror.cmpPos(r.anchor, r.head) < 0 ? r.anchor : r.head;
-      const hi = lo === r.anchor ? r.head : r.anchor;
-      const rtl = lineIsRtl(ed.getLine(r.head.line) || '');
-      const p = goLeft === !rtl ? lo : hi; // LTR: Left→doc-start; RTL: Left→doc-end
-      return { anchor: p, head: p };
-    }));
-    return;
-  }
-
-  const saved = ed.doc.direction;
-  if (base !== saved) ed.doc.direction = base;
-  try { return CodeMirror.commands[name](ed); }
-  finally { if (base !== saved) ed.doc.direction = saved; }
-}
-
-function initEditor() {
-  ['goCharLeft', 'goCharRight', 'goGroupLeft', 'goGroupRight', 'goLineStartSmart', 'goLineEnd']
-    .forEach((n) => { CodeMirror.commands[n + 'DA'] = (ed) => dirAwareMotion(ed, n); });
-  cm = CodeMirror($('#editor'), {
-    value: '% open a file from the tree\n',
-    mode: 'stex',
-    lineNumbers: true,
-    lineWrapping: true,
-    matchBrackets: true,
-    autoCloseBrackets: true,
-    styleActiveLine: true,
-    styleSelectedText: true, // adds .CodeMirror-selectedtext so selected glyphs can go white
-    rtlMoveVisually: true, // Left/Right follow visual position; see dirAwareMotion
-    indentUnit: 2,
-    tabSize: 2,
-    theme: cmTheme(LS.get('theme', 'dark')),
-    direction: 'ltr',
-    extraKeys: {
-      'Ctrl-S': () => saveFile(),
-      'Cmd-S': () => saveFile(),
-      'Ctrl-B': () => build(),
-      'Cmd-B': () => build(),
-      'Ctrl-Space': (ed) => ed.showHint({ hint: latexHint, completeSingle: false, container: $('#app') }),
-      Tab: (ed) => (ed.somethingSelected() ? ed.indentSelection('add') : ed.replaceSelection('  ')),
-      'Shift-Tab': (ed) => ed.indentSelection('subtract'),
-      Home: 'goLineStartSmartDA',
-      End: 'goLineEndDA',
-      Left: 'goCharLeftDA',
-      Right: 'goCharRightDA',
-      'Ctrl-Left': 'goGroupLeftDA',
-      'Ctrl-Right': 'goGroupRightDA',
-    },
-  });
-  cm.setSize('100%', '100%');
-  cm.on('renderLine', (ed, lh) => pinOrder(lh, lh.text));
-  applyDir();
-  markAllCmdLines();
-  cm.on('change', () => { setDirty(isDirty()); if (previewMode === 'md') scheduleMd(); });
-  tw.preview = makePaneTween('preview', () => $('#mdView').scrollTop, (y) => { $('#mdView').scrollTop = y; });
-  tw.editor = makePaneTween('editor', () => cm.getScrollInfo().top, (y) => cm.scrollTo(null, y));
-  cm.on('scroll', rafThrottle(syncFromEditor));
-  cm.on('cursorActivity', onCaretActivity);
-  $('#mdView').addEventListener('scroll', rafThrottle(mdSyncFromPreview));
-  // a genuine fast user scroll should stop the incoming glide, not be mistaken for it
-  const stopIn = (el, pane) => ['wheel', 'pointerdown', 'keydown'].forEach(
-    (ev) => el.addEventListener(ev, () => tw[pane].cancel(), { passive: true }));
-  stopIn($('#mdView'), 'preview');
-  stopIn(cm.getScrollerElement(), 'editor');
-  cm.on('changes', (ed, changes) => {
-    let lo = Infinity;
-    let hi = -1;
-    for (const c of changes) {
-      lo = Math.min(lo, c.from.line);
-      hi = Math.max(hi, c.to.line, c.from.line + (c.text ? c.text.length - 1 : 0));
-    }
-    if (hi >= 0) markCmdRange(lo - 1, hi + 1);
-  });
-}
-function refreshCM() { if (cm) setTimeout(() => cm.refresh(), 20); }
+const edScroll = () => {
+  const s = view.scrollDOM;
+  return { top: s.scrollTop, height: s.scrollHeight, clientHeight: s.clientHeight };
+};
+const edHeightAtLine = (n) => view.lineBlockAt(offAt(n, 0)).top;
 
 // A line's base direction is RTL only when it is a non-command line that carries
 // at least one RTL (Persian/Arabic) character. Everything else is LTR: command
-// lines (\section, \begin, …), empty lines, and lines of pure punctuation /
-// braces / digits / Latin ("{", "(", "1.2", "abc", …). This drives the CSS
-// class (alignment + `direction`), the pinned bidi order, and motion (above).
+// lines (\section, \begin, …), empty lines, pure punctuation / braces / digits
+// / Latin. Handed to the bundle, where it drives the per-line `.cm-rtl-line`
+// class (direction + alignment, read back by perLineTextDirection) and which
+// lines get LTR bidi isolates.
 const CMD_LINE_RE = /^\s*\\/;
-const HAS_FA_RE = /[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/;
+const HAS_FA_RE = /[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff\ufb50-\ufdff\ufe70-\ufeff]/;
 function lineIsRtl(s) {
   return HAS_FA_RE.test(s) && !CMD_LINE_RE.test(s);
 }
-function markCmdLine(i) {
-  if (i < 0 || i >= cm.lineCount()) return;
-  const text = cm.getLine(i) || '';
-  const rtl = lineIsRtl(text);
-  pinOrder(cm.getLineHandle(i), text);
-  const info = cm.lineInfo(i);
-  const has = !!(info && info.textClass && ('' + info.textClass).split(/\s+/).includes('rtl-line'));
-  if (rtl && !has) {
-    cm.addLineClass(i, 'text', 'rtl-line');
-    cm.addLineClass(i, 'wrap', 'rtl-line-wrap');
-  } else if (!rtl && has) {
-    cm.removeLineClass(i, 'text', 'rtl-line');
-    cm.removeLineClass(i, 'wrap', 'rtl-line-wrap');
-  }
+
+// dir toggle: auto (per line) / rtl (all right) / ltr (all left).
+function applyDir() {
+  if (ed) ed.setDir(LS.get('dir', 'auto'));
 }
-function markCmdRange(lo, hi) {
-  cm.operation(() => {
-    for (let i = Math.max(0, lo); i <= hi && i < cm.lineCount(); i++) markCmdLine(i);
+
+function initEditor() {
+  ed = RTLCM.create({
+    parent: $('#editor'),
+    doc: '% open a file from the tree\n',
+    lineIsRtl,
+    words: { LATEX_CMDS, LATEX_ENVS, ARG_CMDS, collectMacros, getBibKeys: () => BIB_KEYS },
+    on: {
+      save: () => saveFile(),
+      build: () => build(),
+      docChange: () => { setDirty(isDirty()); if (previewMode === 'md') scheduleMd(); },
+      selChange: () => onCaretActivity(),
+      scroll: rafThrottle(() => syncFromEditor()),
+    },
   });
+  view = ed.view;
+  applyDir();
+
+  tw.preview = makePaneTween('preview', () => $('#mdView').scrollTop, (y) => { $('#mdView').scrollTop = y; });
+  tw.editor = makePaneTween('editor', () => view.scrollDOM.scrollTop, (y) => { view.scrollDOM.scrollTop = y; });
+  $('#mdView').addEventListener('scroll', rafThrottle(mdSyncFromPreview));
+  // a genuine fast user scroll should stop the incoming glide, not be mistaken for it
+  const stopIn = (el, pane) => ['wheel', 'pointerdown', 'keydown'].forEach(
+    (evn) => el.addEventListener(evn, () => tw[pane].cancel(), { passive: true }));
+  stopIn($('#mdView'), 'preview');
+  stopIn(view.scrollDOM, 'editor');
 }
-function markAllCmdLines() { markCmdRange(0, cm.lineCount() - 1); }
+function refreshCM() { if (ed) setTimeout(() => ed.refresh(), 20); }
 
 // ------------------------------------------------------------------ file state
 let curf = { path: null, mtimeMs: 0, saved: '' };
 const setDirty = (d) => app.classList.toggle('dirty', !!d);
-const isDirty = () => !!(cm && curf.path && cm.getValue() !== curf.saved);
+const isDirty = () => !!(view && curf.path && docText() !== curf.saved);
 
 async function api(path, opts) {
   const r = await fetch(path, opts);
@@ -390,12 +137,10 @@ async function openFile(rel) {
   if (isDirty() && !confirm('Discard unsaved changes in ' + curf.path + '?')) return;
   const { body } = await api('/api/file?path=' + encodeURIComponent(rel));
   curf = { path: rel, mtimeMs: body.mtimeMs, saved: body.content };
-  cm.setValue(body.content);
-  cm.clearHistory();
-  cm.setCursor({ line: 0, ch: 0 });
-  applyDir();
-  markAllCmdLines();
-  cm.focus();
+  ed.setDoc(body.content);   // rebuilds the state -> also clears history
+  setCaret(0, 0);
+  applyDir();                // re-assert dir mode (setDoc resets to 'auto')
+  view.focus();
   setDirty(false);
   $('#fileName').textContent = rel;
   LS.set('lastFile', rel);
@@ -407,7 +152,7 @@ async function openFile(rel) {
 
 async function saveFile(force) {
   if (!curf.path) return;
-  const text = cm.getValue();
+  const text = docText();
   const q = '?path=' + encodeURIComponent(curf.path) + '&mtime=' + (force ? 'force' : curf.mtimeMs);
   const { status, body } = await api('/api/file' + q, { method: 'PUT', body: text });
   if (status === 409) {
@@ -615,10 +360,10 @@ async function renderMermaid(host) {
 async function renderMd() {
   if (previewMode !== 'md') return;
   const view = $('#mdView');
-  const src = cm.getValue();
+  const src = docText();
   try { await ensureMdLibs(); }
   catch (e) { view.innerHTML = ''; view.append(Object.assign(document.createElement('div'), { className: 'md-err', textContent: 'preview libraries failed to load — ' + e.message })); return; }
-  if (previewMode !== 'md' || cm.getValue() !== src) return; // changed while loading
+  if (previewMode !== 'md' || docText() !== src) return; // changed while loading
   let out;
   try { out = mdToDom(src); }
   catch (e) { view.innerHTML = ''; view.append(Object.assign(document.createElement('div'), { className: 'md-err', textContent: 'render error — ' + e.message })); return; }
@@ -884,20 +629,13 @@ async function jumpToSource(file, line) {
   const ln = Math.max(0, (line || 1) - 1);
   reverseJumpGuard = performance.now() + 400; // suppress the caret-driven forward sync we're about to cause
   lastPdfPage = 0; lastPdfV = null;
-  cm.setCursor({ line: ln, ch: 0 });
-  cm.scrollIntoView({ line: ln, ch: 0 }, 120);
-  cm.focus();
+  setCaret(ln, 0);
+  view.focus();
   flashLine(ln);
 }
 function flashLine(ln) {
-  if (ln < 0 || ln >= cm.lineCount()) return;
-  const len = (cm.getLine(ln) || '').length;
-  if (len) {
-    const m = cm.markText({ line: ln, ch: 0 }, { line: ln, ch: len }, { className: 'src-flash' });
-    setTimeout(() => m.clear(), 1200);
-  }
-  cm.addLineClass(ln, 'wrap', 'src-flash-line');
-  setTimeout(() => cm.removeLineClass(ln, 'wrap', 'src-flash-line'), 1200);
+  if (ln < 0 || ln >= view.state.doc.lines) return;
+  ed.flash(ln);
 }
 
 // ------------------------------------------------------------------ view sync
@@ -944,7 +682,7 @@ function rafThrottle(fn) {
   return () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; fn(); }); };
 }
 function editorTopLine() {
-  return cm.lineAtHeight(cm.getScrollInfo().top + 2, 'local');
+  return posAt(view.lineBlockAtHeight(view.scrollDOM.scrollTop + 2).from).line;
 }
 function syncFromEditor() {
   if (!syncOn || paneBusy('editor')) return;
@@ -956,7 +694,7 @@ function mdSyncFromEditor() {
   if (previewMode !== 'md' || paneBusy('editor')) return;
   const view = $('#mdView');
   if (!mdAnchors.length) { // no anchors (render failed / empty) -> proportional
-    const si = cm.getScrollInfo();
+    const si = edScroll();
     tw.preview.to((si.top / Math.max(1, si.height - si.clientHeight)) * maxScroll(view));
     return;
   }
@@ -975,7 +713,7 @@ function mdSyncFromPreview() {
   if (!syncOn || paneBusy('preview') || previewMode !== 'md') return;
   const view = $('#mdView');
   if (!mdAnchors.length) {
-    const si = cm.getScrollInfo();
+    const si = edScroll();
     tw.editor.to((view.scrollTop / maxScroll(view)) * Math.max(1, si.height - si.clientHeight));
     return;
   }
@@ -988,7 +726,7 @@ function mdSyncFromPreview() {
   const bTop = b ? b.el.offsetTop : view.scrollHeight;
   const span = b ? b.line - a.line : 1;
   const frac = bTop > aTop ? Math.max(0, Math.min(1, (y - aTop) / (bTop - aTop))) : 0;
-  tw.editor.to(cm.heightAtLine(Math.floor(a.line + span * frac), 'local') - 4);
+  tw.editor.to(edHeightAtLine(Math.floor(a.line + span * frac)) - 4);
 }
 const SP = 65536;
 function pdfSyncFromEditor(opts) {
@@ -997,7 +735,7 @@ function pdfSyncFromEditor(opts) {
   if (!curf.path || !/\.tex$/i.test(curf.path)) return;
   const main = $('#mainFile').value;
   if (!main) return;
-  const line = (fromCaret ? cm.getCursor('head').line : editorTopLine()) + 1;
+  const line = (fromCaret ? posAt(view.state.selection.main.head).line : editorTopLine()) + 1;
   clearTimeout(pdfSyncTimer);
   pdfSyncTimer = setTimeout(async () => {
     let r;
@@ -1215,7 +953,7 @@ $('#theme').addEventListener('click', () => {
   app.dataset.theme = next;
   LS.set('theme', next);
   $('#theme').textContent = next === 'dark' ? '☾ dark' : '☀ light';
-  if (cm) cm.setOption('theme', cmTheme(next));
+  // the editor recolours itself: its theme + highlight style are CSS-var driven
   applyPdfInvert(); // 'auto' PDF dark mode tracks the app theme
   if (previewMode === 'md') renderMd(); // re-theme mermaid diagrams
 });
@@ -1322,8 +1060,7 @@ async function chooseRoot(p) {
     LS.set('lastFile', '');
     curf = { path: null, mtimeMs: 0, saved: '' };
     BIB_KEYS = [];
-    cm.setValue('% open a file from the tree\n');
-    cm.clearHistory();
+    ed.setDoc('% open a file from the tree\n');
     $('#fileName').textContent = 'no file open';
     setDirty(false);
     unloadPdf();
@@ -1374,8 +1111,8 @@ function restoreLayout() {
 
 async function boot() {
   restoreLayout();
-  if (typeof CodeMirror === 'undefined') {
-    $('#editor').innerHTML = '<p style="padding:16px;color:#c66">CodeMirror failed to load — offline, or the CDN is blocked.</p>';
+  if (typeof RTLCM === 'undefined' || !RTLCM.create) {
+    $('#editor').innerHTML = '<p style="padding:16px;color:#c66">Editor bundle failed to load — run <code>npm i &amp;&amp; npm run build:editor</code>.</p>';
     setStatus('editor did not load', 'err');
     return;
   }

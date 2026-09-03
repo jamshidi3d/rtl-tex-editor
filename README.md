@@ -1,11 +1,21 @@
 # RTL TeX Editor
 
 A local, single-purpose editor for mixed **RTL/LTR** TeX (a Persian thesis, in
-particular): CodeMirror 5 taught **per-line base direction** — a non-command
-line containing Persian is RTL (right-aligned, RTL bidi order, RTL caret
-motion); `\command` lines, symbols and English stay LTR — plus a **live pdf.js
-preview** with **two-way SyncTeX** (caret ↔ page, click a paragraph → open the
-source), a **folder tree**, and **light/dark** themes (incl. a dark PDF).
+particular): **CodeMirror 6** with **per-line base direction**
+(`EditorView.perLineTextDirection`) — a non-command line containing Persian is
+RTL (right-aligned, RTL caret motion, RTL selection); `\command` lines, symbols
+and English stay LTR. On an RTL line, each `\command` / `$…$` / `{…}` run is
+wrapped as an **LTR bidi isolate** (`bidiIsolate` + the `bidiIsolatedRanges`
+facet), so inline commands and math read left-to-right *inside* the Persian
+sentence, with the caret and selection staying correct — something CodeMirror 5
+could not do. Plus a **live pdf.js preview** with **two-way SyncTeX** (caret ↔
+page, click a paragraph → open the source), a **folder tree**, and
+**light/dark** themes (incl. a dark PDF).
+
+The editor is bundled locally (`public/editor/src/` → `public/editor/cm6.bundle.js`,
+committed). To rebuild after changing it: `npm install && npm run build:editor`
+(needs esbuild + the `@codemirror/*` packages from `devDependencies`). Running
+the tool itself needs no `npm install`.
 
 UI text is **DejaVu Sans**; Persian / RTL text is **IRANSansWeb**.
 
@@ -72,7 +82,8 @@ switch below).
 | Light / dark | **☾ / ☀** |
 | PDF dark mode | **Alt+I** cycles `auto` (follows the app theme — dark app → inverted PDF) → `on` → `off`. Remembered. |
 | Text direction | **dir:** cycles `auto` (per line — a non-command line with Persian is RTL, everything else LTR; default) → `rtl` (force every line RTL) → `ltr` (force every line LTR). In `auto`, each line's bidi order, alignment and arrow-key motion follow its own base direction. Choice is remembered. |
-| Accept a completion | **Tab** or click (Enter is always a newline) |
+| Accept a completion | **Enter** / **Tab** / click while the popup is open (otherwise Enter is a newline) |
+| Find in file | **Ctrl/Cmd+F** opens a search panel (Enter / Shift+Enter to step, Esc to close) |
 | Resize | drag the bars between sidebar / editor / PDF |
 | Build log | bar at the bottom (auto-opens on failure) |
 
@@ -96,9 +107,13 @@ the tree.
   all loaded from cdnjs the first time a `.md` file is opened (mermaid is ~3 MB —
   fetched only if a diagram is present). Math is protected from the Markdown
   parser before rendering; code blocks are left untouched.
-- **CodeMirror 5 (5.65.16) loads from cdnjs** via plain `<script>`/`<link>` tags
-  in `index.html` — needs network on first load (then cached). To vendor for
-  offline use, drop the pinned files into `public/vendor/` and repoint the tags.
+- **CodeMirror 6 is bundled locally** — `public/editor/src/index.js` is built
+  with esbuild to `public/editor/cm6.bundle.js` (committed, ~370 KB), loaded by
+  one plain `<script>` in `index.html`. No CDN, works offline. Rebuild with
+  `npm install && npm run build:editor`. The bundle carries the stex mode
+  (`@codemirror/legacy-modes`), autocomplete, search, and the RTL/bidi-isolate
+  wiring; its theme + syntax colours are CSS-var driven so the light/dark toggle
+  needs no reconfigure.
 - **Fonts** (DejaVu Sans, IRANSansWeb) load from jsDelivr via `@font-face` in
   `styles.css`, `font-display: swap` — offline you just get the system fallback.
 - `server.js` runs `latexmk -shell-escape` and can read/write anywhere under

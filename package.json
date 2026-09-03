@@ -6,7 +6,19 @@
   "bin": { "rtl-tex-editor": "server.js" },
   "scripts": {
     "start": "node server.js",
-    "thesis": "node server.js --root .. --engine xelatex"
+    "thesis": "node server.js --root .. --engine xelatex",
+    "build:editor": "esbuild public/editor/src/index.js --bundle --format=iife --global-name=RTLCM --outfile=public/editor/cm6.bundle.js --target=es2018 --minify"
   },
-  "engines": { "node": ">=18" }
+  "engines": { "node": ">=18" },
+  "devDependencies": {
+    "@codemirror/autocomplete": "^6.18.6",
+    "@codemirror/commands": "^6.8.1",
+    "@codemirror/language": "^6.11.0",
+    "@codemirror/legacy-modes": "^6.5.1",
+    "@codemirror/search": "^6.5.11",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.38.1",
+    "@lezer/highlight": "^1.2.1",
+    "esbuild": "^0.25.0"
+  }
 }

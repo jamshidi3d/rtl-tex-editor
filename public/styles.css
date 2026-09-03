@@ -187,8 +187,7 @@ body {
   animation: synctexFade 1.2s ease-out forwards;
 }
 @keyframes synctexFade { from { opacity: .55; } to { opacity: 0; } }
-.CodeMirror .src-flash { background: rgba(255, 210, 80, .35); }
-.CodeMirror .src-flash-line { background: rgba(255, 210, 80, .18); }
+.cm-editor .cm-flashLine { background: rgba(255, 210, 80, .18); }
 
 /* ---- Markdown preview ------------------------------------------------------ */
 .md-view {
@@ -314,94 +313,28 @@ body {
 .dlg-empty { padding: 6px 8px; color: var(--fg-dim); }
 .dlg-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 12px; }
 
-/* ---- CodeMirror 5 -------------------------------------------------------- */
-.CodeMirror {
-  height: 100%;
-  line-height: 1.7;
-  font-family: var(--mono-font);
-  font-size: 14px;
-}
-.CodeMirror-scroll { min-height: 100%; }
+/* ---- CodeMirror 6 -------------------------------------------------------- */
+/* Colours, gutters, selection, active line, the search panel and the
+   completion popup are all styled by the bundle's EditorView.theme +
+   HighlightStyle (editor/src/index.js), driven by the same --bg / --fg /
+   --accent CSS vars as the app chrome — so the light/dark toggle needs no
+   editor reconfigure. Only structure + the RTL bits live here. */
+.cm-editor { height: 100%; }
+.cm-editor .cm-scroller { font-family: var(--mono-font); }
+.cm-editor.cm-focused { outline: none; }
 
-/* CodeMirror's editor-wide direction stays LTR (so pure-LaTeX lines get no bidi
-   and a plain logical caret). A line that needs RTL gets `direction: rtl` on its
-   own <pre>, which flips the base direction *and* the start edge (right-aligned).
-   CodeMirror positions the caret from measured DOM rects, so it tracks the
-   shifted glyphs — this is exactly CodeMirror's own `.CodeMirror-rtl pre` trick,
-   applied per line instead of editor-wide.
+/* Per-line direction. `.cm-rtl-line` is added by a ViewPlugin to every line the
+   host flags as RTL (a non-command line with Persian). EditorView
+   .perLineTextDirection reads it back, so caret motion / Home-End / selection
+   all follow that line's own base direction. A \command / $…$ / {…} run on such
+   a line is additionally wrapped as an LTR bidi isolate (spec `bidiIsolate` +
+   the `bidiIsolatedRanges` facet), so it reads left-to-right inside the RTL
+   line with the caret and selection still correct. */
+.cm-editor .cm-line.cm-rtl-line { direction: rtl; text-align: right; }
 
-   dir: auto (default) — a non-command line containing Persian goes RTL. */
-.CodeMirror pre.CodeMirror-line.rtl-line,
-.CodeMirror pre.CodeMirror-line-like.rtl-line { direction: rtl; text-align: right; }
-.rtl-line-wrap, .rtl-line-wrap > pre { direction: rtl; text-align: right; }
-
-/* dir: rtl / dir: ltr — force every line the same way (wins over the per-line rule).
-   .force-rtl / .force-ltr sit on the .CodeMirror wrapper itself. */
-.CodeMirror.force-rtl pre.CodeMirror-line,
-.CodeMirror.force-rtl pre.CodeMirror-line-like { direction: rtl !important; text-align: right !important; }
-.CodeMirror.force-ltr pre.CodeMirror-line,
-.CodeMirror.force-ltr pre.CodeMirror-line-like { direction: ltr !important; text-align: left !important; }
-
-/* blend both themes with the app chrome */
-.cm-s-default.CodeMirror { background: var(--bg); color: #1f2328; }
-.cm-s-default .CodeMirror-gutters { background: var(--bg-2); border: none; }
-.cm-s-default .CodeMirror-linenumber { color: #b3b9c4; }
-.cm-s-material-darker.CodeMirror { background: var(--bg); color: #d7dae0; }
-.cm-s-material-darker .CodeMirror-gutters { background: var(--bg-2); border: none; }
-.cm-s-material-darker .CodeMirror-linenumber { color: #5c6370; }
-.CodeMirror-activeline-background { background: rgba(128, 140, 170, .10) !important; }
-.CodeMirror-matchingbracket { outline: 1px solid var(--accent); color: inherit !important; }
-
-/* selection: solid blue box, white text (needs the mark-selection addon +
-   styleSelectedText:true in app.js so the glyphs get .CodeMirror-selectedtext) */
-.CodeMirror-selected,
-.CodeMirror-focused .CodeMirror-selected { background: var(--sel-bg) !important; }
-.CodeMirror-line::selection,
-.CodeMirror-line > span::selection,
-.CodeMirror-line > span > span::selection { background: var(--sel-bg); color: var(--sel-fg); }
-.CodeMirror-selectedtext,
-.CodeMirror-selectedtext span { color: var(--sel-fg) !important; }
-
-/* token colours — light */
-.cm-s-default .cm-tag       { color: #0b5fa5; font-weight: 600; }  /* \chapter \begin … */
-.cm-s-default .cm-bracket   { color: #b26b00; }                     /* { } [ ] $ */
-.cm-s-default .cm-comment   { color: #8a8f98; font-style: italic; } /* %… */
-.cm-s-default .cm-string    { color: #0a7b34; }
-.cm-s-default .cm-number,
-.cm-s-default .cm-atom      { color: #9a5000; }
-.cm-s-default .cm-keyword   { color: #a1268b; }
-.cm-s-default .cm-variable-2{ color: #7a5c00; }                     /* math-mode body */
-.cm-s-default .cm-def       { color: #0b5fa5; }
-.cm-s-default .cm-error     { color: #d11; }
-
-/* token colours — dark (override material-darker) */
-.cm-s-material-darker .cm-tag       { color: #7aa2f7; font-weight: 600; }
-.cm-s-material-darker .cm-bracket   { color: #e0af68; }
-.cm-s-material-darker .cm-comment   { color: #5c6370; font-style: italic; }
-.cm-s-material-darker .cm-string    { color: #9ece6a; }
-.cm-s-material-darker .cm-number,
-.cm-s-material-darker .cm-atom      { color: #ff9e64; }
-.cm-s-material-darker .cm-keyword   { color: #bb9af7; }
-.cm-s-material-darker .cm-variable-2{ color: #e0af68; }
-.cm-s-material-darker .cm-def       { color: #7dcfff; }
-.cm-s-material-darker .cm-error     { color: #f7768e; }
-
-/* completion popup (Ctrl+Space) — explicit, readable colours in both themes.
-   The popup is appended inside #app, so #app[data-theme="dark"] scopes work. */
-.CodeMirror-hints {
-  background: #ffffff; color: #1f2328;
-  border: 1px solid #c9ccd1; border-radius: 6px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, .18);
-  font-family: inherit; font-size: 13px; z-index: 40; padding: 3px;
-}
-.CodeMirror-hint { color: #1f2328; padding: 2px 8px; border-radius: 4px; }
-.CodeMirror-hint:hover { background: #e9edf2; }
-li.CodeMirror-hint-active { background: #1f6feb; color: #ffffff; }
-
-#app[data-theme="dark"] .CodeMirror-hints {
-  background: #23262d; color: #e6e8ec;
-  border-color: #3a3f4b; box-shadow: 0 6px 20px rgba(0, 0, 0, .5);
-}
-#app[data-theme="dark"] .CodeMirror-hint { color: #e6e8ec; }
-#app[data-theme="dark"] .CodeMirror-hint:hover { background: #2f333d; }
-#app[data-theme="dark"] li.CodeMirror-hint-active { background: #3b6fd4; color: #ffffff; }
+/* dir: rtl / dir: ltr — force every line the same way. `.force-rtl` /
+   `.force-ltr` sit on the .cm-editor wrapper (set from app.js). */
+.cm-editor.force-rtl .cm-content,
+.cm-editor.force-rtl .cm-line { direction: rtl; text-align: right; }
+.cm-editor.force-ltr .cm-content,
+.cm-editor.force-ltr .cm-line { direction: ltr; text-align: left; }
