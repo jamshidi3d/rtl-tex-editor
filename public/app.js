@@ -638,6 +638,15 @@ function ensurePdfLibs() {
   pdfjsReady.catch(() => { pdfjsReady = null; }); // allow retry on next build
   return pdfjsReady;
 }
+// Apply 'page-width' once the container actually has a width. On the very first
+// build the PDF pane may still be 0-wide when `pagesinit` fires, which left the
+// pages unscaled/invisible until a second build — retry across a few frames.
+function fitPdf(tries) {
+  if (!pdfViewer || !pdfViewer.pdfDocument) return;
+  const w = $('#pdfDoc').clientWidth;
+  if (w > 20) { try { pdfViewer.currentScaleValue = 'page-width'; } catch (e) { /* ignore */ } return; }
+  if ((tries || 0) < 30) requestAnimationFrame(() => fitPdf((tries || 0) + 1));
+}
 function initPdfViewer() {
   if (pdfViewer) return;
   pdfEventBus = new window.pdfjsViewer.EventBus();
@@ -654,15 +663,9 @@ function initPdfViewer() {
     annotationEditorMode: -1,
   });
   pdfLinkService.setViewer(pdfViewer);
-  pdfEventBus.on('pagesinit', () => {
-    try { pdfViewer.currentScaleValue = 'page-width'; } catch (e) { /* zero-size container */ }
-    restorePdfScroll();
-  });
-  pdfFitRO = new ResizeObserver(debounce(() => {
-    if (pdfViewer && pdfViewer.pdfDocument) {
-      try { pdfViewer.currentScaleValue = 'page-width'; } catch (e) { /* ignore */ }
-    }
-  }, 120));
+  pdfEventBus.on('pagesinit', () => { fitPdf(0); restorePdfScroll(); });
+  pdfEventBus.on('pagesloaded', () => fitPdf(0));
+  pdfFitRO = new ResizeObserver(debounce(() => fitPdf(0), 120));
   pdfFitRO.observe($('#pdfDoc'));
   $('#pdfDoc').addEventListener('click', onPdfClick);
 }
@@ -693,6 +696,8 @@ async function loadPdf(url) {
   pdfViewer.setDocument(doc);
   pdfLoaded = true;
   pdfUrl = url;
+  fitPdf(0);
+  setTimeout(() => fitPdf(0), 200);
 }
 function restorePdfScroll() {
   if (_pdfKeep && _pdfKeep.page && _pdfKeep.page <= pdfViewer.pagesCount) {
@@ -710,11 +715,13 @@ function unloadPdf() {
   if (old) { try { old.destroy(); } catch (e) { /* ignore */ } }
 }
 function pdfGoto(page, xPt, yPt) {
-  if (!pdfViewer || !pdfLoaded) return;
-  pdfViewer.scrollPageIntoView({
-    pageNumber: page,
-    destArray: xPt == null ? null : [null, { name: 'XYZ' }, xPt, yPt, null],
-  });
+  if (!pdfViewer || !pdfLoaded || page > pdfViewer.pagesCount) return;
+  try {
+    pdfViewer.scrollPageIntoView({
+      pageNumber: page,
+      destArray: xPt == null ? null : [null, { name: 'XYZ' }, xPt, yPt, null],
+    });
+  } catch (e) { /* pages not laid out yet */ }
 }
 
 // Flash a fading box over a spot on a rendered page. `rect` is in unscaled PDF
