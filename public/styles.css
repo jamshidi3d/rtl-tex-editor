@@ -9,18 +9,23 @@
   font-family: "DejaVu Sans"; font-weight: 700; font-display: swap;
   src: url("https://cdn.jsdelivr.net/npm/@fontsource/dejavu-sans@5/files/dejavu-sans-latin-700-normal.woff2") format("woff2");
 }
+/* unicode-range confines IRANSansWeb to Persian/Arabic codepoints, so it can
+   sit *first* in every stack (incl. the monospace editor one) and only ever
+   render Persian — Latin falls straight through to the next font. This is what
+   makes Persian inside a left-flushed / mixed line use IRANSans too. */
 @font-face {
   font-family: "IRANSansWeb"; font-weight: 400; font-display: swap;
   src: url("https://cdn.jsdelivr.net/npm/iransans@1.0.0/woff2/IRANSansWeb.woff2") format("woff2");
+  unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+200C-200D, U+2010-2011, U+FB50-FDFF, U+FE70-FEFF;
 }
 @font-face {
   font-family: "IRANSansWeb"; font-weight: 700; font-display: swap;
   src: url("https://cdn.jsdelivr.net/npm/iransans@1.0.0/woff2/IRANSansWeb_Bold.woff2") format("woff2");
+  unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+200C-200D, U+2010-2011, U+FB50-FDFF, U+FE70-FEFF;
 }
 :root {
-  --ui-font: "DejaVu Sans", "IRANSansWeb", ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
-  --rtl-font: "IRANSansWeb", "DejaVu Sans", Tahoma, sans-serif;
-  --mono-font: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, "IRANSansWeb", Tahoma, monospace;
+  --ui-font: "IRANSansWeb", "DejaVu Sans", ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  --mono-font: "IRANSansWeb", ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, Tahoma, monospace;
 }
 
 /* ---- theme tokens ------------------------------------------------------ */
@@ -79,7 +84,7 @@ body {
   background: var(--bg-2);
   border-bottom: 1px solid var(--border);
 }
-.brand { font-weight: 700; letter-spacing: .3px; color: var(--fg-dim); }
+.brand { font-weight: 400; letter-spacing: .3px; color: var(--fg-dim); }
 .spacer { flex: 1; }
 .field { display: flex; align-items: center; gap: 5px; color: var(--fg-dim); }
 .field select {
@@ -190,7 +195,6 @@ body {
   position: absolute; inset: 0; overflow: auto;
   background: var(--bg); color: var(--fg);
   padding: 24px 28px; line-height: 1.65;
-  /* DejaVu has no Persian glyphs, so Persian falls through to IRANSansWeb */
   font: 14px/1.65 var(--ui-font);
 }
 .md-view > :first-child { margin-top: 0; }
@@ -328,9 +332,7 @@ body {
 
    dir: auto (default) — a non-command line containing Persian goes RTL. */
 .CodeMirror pre.CodeMirror-line.rtl-line,
-.CodeMirror pre.CodeMirror-line-like.rtl-line {
-  direction: rtl; text-align: right; font-family: var(--rtl-font);
-}
+.CodeMirror pre.CodeMirror-line-like.rtl-line { direction: rtl; text-align: right; }
 .rtl-line-wrap, .rtl-line-wrap > pre { direction: rtl; text-align: right; }
 
 /* dir: rtl / dir: ltr — force every line the same way (wins over the per-line rule).
