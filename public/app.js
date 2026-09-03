@@ -624,19 +624,29 @@ function pdfWorkerSrc() {
 }
 function ensurePdfLibs() {
   if (pdfjsReady) return pdfjsReady;
+  // The stylesheet is cosmetic and must not gate readiness (a slow/blocked
+  // <link> would otherwise delay or fail the whole thing) — fire it separately.
+  loadAssets('pdfjs-css', [CDN + 'pdf.js/' + PDFJS + '/pdf_viewer.min.css']).catch(() => {});
   // pdf_viewer's webpack build grabs `globalThis.pdfjsLib` the moment it runs
   // and caches it — so pdf.min.js MUST be fully loaded first, otherwise the
   // viewer captures `undefined` (=> "f is undefined / AnnotationEditorType").
   pdfjsReady = loadAssets('pdfjs-core', [CDN + 'pdf.js/' + PDFJS + '/pdf.min.js'])
-    .then(() => loadAssets('pdfjs-viewer', [
-      CDN + 'pdf.js/' + PDFJS + '/pdf_viewer.min.js',
-      CDN + 'pdf.js/' + PDFJS + '/pdf_viewer.min.css',
-    ]))
+    .then(() => loadAssets('pdfjs-viewer', [CDN + 'pdf.js/' + PDFJS + '/pdf_viewer.min.js']))
     .then(() => {
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc();
     });
   pdfjsReady.catch(() => { pdfjsReady = null; }); // allow retry on next build
   return pdfjsReady;
+}
+function waitForWidth(el, ms) {
+  return new Promise((resolve) => {
+    const t0 = performance.now();
+    const tick = () => {
+      if (el.clientWidth > 20 || performance.now() - t0 > (ms || 3000)) resolve();
+      else requestAnimationFrame(tick);
+    };
+    tick();
+  });
 }
 // Apply 'page-width' once the container actually has a width. On the very first
 // build the PDF pane may still be 0-wide when `pagesinit` fires, which left the
@@ -664,10 +674,11 @@ function initPdfViewer() {
   });
   pdfLinkService.setViewer(pdfViewer);
   pdfEventBus.on('pagesinit', () => { fitPdf(0); restorePdfScroll(); });
-  pdfEventBus.on('pagesloaded', () => fitPdf(0));
+  pdfEventBus.on('pagesloaded', () => { fitPdf(0); try { pdfViewer.update(); } catch (e) { /* ignore */ } });
   pdfFitRO = new ResizeObserver(debounce(() => fitPdf(0), 120));
   pdfFitRO.observe($('#pdfDoc'));
   $('#pdfDoc').addEventListener('click', onPdfClick);
+  try { pdfViewer.setDocument(null); } catch (e) { /* prime */ }
 }
 async function loadPdf(url) {
   const seq = ++pdfSeq;
@@ -690,10 +701,15 @@ async function loadPdf(url) {
     return;
   }
   if (seq !== pdfSeq) { try { await doc.destroy(); } catch (e) { /* ignore */ } return; }
+  // pdf.js computes the 'page-width' scale from container.clientWidth; if the
+  // pane isn't laid out yet the scale is 0 and pages render invisibly (the
+  // "only shows on the second build" symptom).
+  await waitForWidth($('#pdfDoc'), 3000);
+  if (seq !== pdfSeq) { try { await doc.destroy(); } catch (e) { /* ignore */ } return; }
   _pdfKeep = keepPage ? { page: keepPage } : null;
   pdfDocObj = doc;
-  pdfLinkService.setDocument(doc, null);
   pdfViewer.setDocument(doc);
+  pdfLinkService.setDocument(doc, null);
   pdfLoaded = true;
   pdfUrl = url;
   fitPdf(0);
