@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RTL-Web-Editor</title>
+
+<!-- CodeMirror 5 (plain scripts, no bundler). Vendor into public/vendor/ for offline. -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/dialog/dialog.min.css" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="app" data-theme="dark" data-editor-side="left">
+
+  <header id="toolbar">
+    <span class="brand">RTL·Web·Editor</span>
+    <label class="field">main
+      <select id="mainFile"><option value="">—</option></select>
+    </label>
+    <button id="build" class="btn primary">Build ▶</button>
+    <label class="chk"><input type="checkbox" id="autobuild" /> auto</label>
+    <span id="status" class="status"></span>
+    <span class="spacer"></span>
+    <button id="dirBtn" class="btn" title="alignment: auto (per line) / rtl (all right) / ltr (all left)">dir: auto</button>
+    <button id="swap" class="btn" title="swap editor / PDF sides">⇄ sides</button>
+    <button id="theme" class="btn" title="light / dark">☾ dark</button>
+  </header>
+
+  <div id="workbench">
+    <aside id="sidebar">
+      <div class="side-head">
+        <span id="rootName" title="workspace root — click to change">workspace</span>
+        <span class="side-actions">
+          <label class="chk sm"><input type="checkbox" id="showAux" /> aux</label>
+          <button id="openFolder" class="icon" title="open another folder">📁</button>
+          <button id="refreshTree" class="icon" title="reload tree">⟳</button>
+        </span>
+      </div>
+      <div id="tree" class="tree"></div>
+    </aside>
+
+    <div class="dragbar v" id="dragSidebar"></div>
+
+    <main id="panes">
+      <section class="pane" id="editorPane">
+        <div class="pane-head">
+          <span id="fileName">no file open</span>
+          <span id="dirtyDot" title="unsaved changes"></span>
+          <span class="grow"></span>
+          <button id="saveBtn" class="icon" title="save (Ctrl/Cmd+S)">💾</button>
+        </div>
+        <div id="editor"></div>
+      </section>
+
+      <div class="dragbar h" id="dragPanes"></div>
+
+      <section class="pane" id="pdfPane">
+        <div class="pane-head">
+          <span>PDF preview</span>
+          <span class="grow"></span>
+          <a id="openPdf" class="icon" target="_blank" title="open PDF in new tab">↗</a>
+        </div>
+        <div id="pdfWrap" class="empty-shown">
+          <iframe id="pdf" title="PDF preview"></iframe>
+          <div id="pdfEmpty" class="empty">Build to see the PDF here.</div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <footer id="logbar" class="collapsed">
+    <button id="logToggle" class="log-toggle">▸ build log</button>
+    <span id="logMeta" class="log-meta"></span>
+    <pre id="log"></pre>
+  </footer>
+
+  <dialog id="folderDlg" class="dlg">
+    <div class="dlg-head">
+      <span>Open folder</span>
+      <button id="dlgX" class="icon" title="close">✕</button>
+    </div>
+    <div class="dlg-row">
+      <button id="dlgUp" class="btn" title="parent folder">↑</button>
+      <input id="dlgPath" type="text" spellcheck="false" placeholder="paste or type a folder path" />
+      <button id="dlgGo" class="btn">go</button>
+    </div>
+    <div id="dlgRecent" class="dlg-recent"></div>
+    <ul id="dlgList" class="dlg-list"></ul>
+    <div class="dlg-foot">
+      <button id="dlgCancel" class="btn">Cancel</button>
+      <button id="dlgOpen" class="btn primary">Open this folder</button>
+    </div>
+  </dialog>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/stex/stex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/selection/active-line.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/selection/mark-selection.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/display/placeholder.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/hint/show-hint.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/dialog/dialog.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/search/searchcursor.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/search/search.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

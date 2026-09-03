@@ -1,0 +1,300 @@
+/* ---- theme tokens ------------------------------------------------------ */
+#app[data-theme="dark"] {
+  --bg: #16181d;
+  --bg-2: #1b1e24;
+  --bg-3: #23262d;
+  --fg: #d7dae0;
+  --fg-dim: #8b929e;
+  --border: #2c313a;
+  --accent: #7aa2f7;
+  --accent-fg: #0b1220;
+  --danger: #e06c75;
+  --ok: #98c379;
+  --sel-bg: #3b6fd4;
+  --sel-fg: #ffffff;
+}
+#app[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-2: #f4f5f7;
+  --bg-3: #eaecef;
+  --fg: #1f2328;
+  --fg-dim: #6a737d;
+  --border: #d8dbe0;
+  --accent: #0b5fa5;
+  --accent-fg: #ffffff;
+  --danger: #d1242f;
+  --ok: #1a7f37;
+  --sel-bg: #2563eb;
+  --sel-fg: #ffffff;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  font: 13px/1.5 ui-sans-serif, system-ui, "Segoe UI", Roboto, "Vazirmatn", Tahoma, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+#app {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  height: 100vh;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+/* ---- toolbar --------------------------------------------------------------- */
+#toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--border);
+}
+.brand { font-weight: 700; letter-spacing: .3px; color: var(--fg-dim); }
+.spacer { flex: 1; }
+.field { display: flex; align-items: center; gap: 5px; color: var(--fg-dim); }
+.field select {
+  background: var(--bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 5px; padding: 3px 6px; max-width: 240px;
+}
+.chk { display: flex; align-items: center; gap: 4px; color: var(--fg-dim); user-select: none; }
+.chk.sm { font-size: 11px; }
+.status { color: var(--fg-dim); min-width: 90px; }
+.status.err { color: var(--danger); }
+.status.ok { color: var(--ok); }
+
+.btn, .icon {
+  background: var(--bg-3); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 4px 10px; cursor: pointer; font: inherit;
+}
+.icon { padding: 3px 7px; background: transparent; }
+.btn:hover, .icon:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+.btn.primary:disabled { opacity: .55; cursor: default; }
+
+/* ---- workbench layout ---------------------------------------------------- */
+#workbench {
+  display: flex;
+  min-height: 0;
+  --sidebar-w: 260px;
+}
+#sidebar {
+  width: var(--sidebar-w);
+  min-width: 140px;
+  background: var(--bg-2);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; min-height: 0;
+}
+.side-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 8px; border-bottom: 1px solid var(--border);
+  font-weight: 600; color: var(--fg-dim);
+}
+.side-actions { display: flex; align-items: center; gap: 6px; }
+.tree { overflow: auto; padding: 4px 0 12px; flex: 1; }
+
+.dragbar { flex: 0 0 6px; cursor: col-resize; background: transparent; }
+.dragbar.h { cursor: col-resize; }
+.dragbar:hover { background: var(--accent); opacity: .4; }
+
+#panes {
+  flex: 1; min-width: 0;
+  display: flex;
+  --ed-flex: 1; --pdf-flex: 1;
+}
+#app[data-editor-side="right"] #panes { flex-direction: row-reverse; }
+
+.pane {
+  min-width: 0; min-height: 0;
+  display: flex; flex-direction: column;
+  background: var(--bg);
+}
+#editorPane { flex: var(--ed-flex) 1 0; }
+#pdfPane { flex: var(--pdf-flex) 1 0; border-left: 1px solid var(--border); }
+#app[data-editor-side="right"] #pdfPane { border-left: none; border-right: 1px solid var(--border); }
+
+.pane-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 10px; font-size: 12px; color: var(--fg-dim);
+  background: var(--bg-2); border-bottom: 1px solid var(--border);
+}
+.pane-head .grow { flex: 1; }
+#fileName { color: var(--fg); direction: ltr; unicode-bidi: plaintext; }
+#dirtyDot { width: 8px; height: 8px; border-radius: 50%; background: transparent; }
+#app.dirty #dirtyDot { background: var(--accent); }
+
+#editor { flex: 1; min-height: 0; overflow: hidden; }
+
+#pdfWrap { position: relative; flex: 1; min-height: 0; background: #525659; }
+#pdf { width: 100%; height: 100%; border: 0; display: block; }
+#pdfWrap.empty-shown #pdf { visibility: hidden; }
+.empty {
+  position: absolute; inset: 0; display: none;
+  align-items: center; justify-content: center; color: #cfd2d6;
+}
+#pdfWrap.empty-shown .empty { display: flex; }
+
+/* ---- file tree --------------------------------------------------------------- */
+.tree ul { list-style: none; margin: 0; padding: 0; }
+.tree li { white-space: nowrap; }
+.tree .row {
+  display: flex; align-items: center; gap: 4px;
+  padding: 2px 8px 2px 4px; cursor: pointer; border-radius: 4px;
+}
+.tree .row:hover { background: var(--bg-3); }
+.tree .row.active { background: var(--accent); color: var(--accent-fg); }
+/* keep the filename legible on the selection bar (ext-tex etc. colour the name directly) */
+.tree .row.active .name { color: var(--accent-fg); }
+.tree .twist { width: 12px; text-align: center; color: var(--fg-dim); }
+.tree .name { overflow: hidden; text-overflow: ellipsis; }
+.tree .ext-tex .name { color: var(--accent); }
+.tree .ext-bib .name, .tree .ext-md .name { font-style: italic; }
+.tree li.dir > ul { display: none; padding-left: 12px; }
+.tree li.dir.open > ul { display: block; }
+.tree .main-badge { font-size: 10px; color: var(--fg-dim); margin-left: auto; }
+.tree .row.active .main-badge { color: var(--accent-fg); }
+
+/* ---- log bar --------------------------------------------------------------- */
+#logbar {
+  background: var(--bg-2);
+  border-top: 1px solid var(--border);
+  display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto 1fr;
+  max-height: 40vh;
+}
+#logbar.collapsed { grid-template-rows: auto 0; }
+#logbar.collapsed #log { display: none; }
+.log-toggle { background: transparent; border: 0; color: var(--fg); cursor: pointer; padding: 5px 10px; font: inherit; text-align: left; }
+.log-meta { align-self: center; color: var(--fg-dim); font-size: 12px; }
+#log {
+  grid-column: 1 / -1;
+  margin: 0; padding: 8px 12px; overflow: auto;
+  font: 12px/1.45 ui-monospace, "Cascadia Code", Consolas, monospace;
+  color: var(--fg-dim); white-space: pre-wrap;
+}
+#log .l-err { color: var(--danger); }
+#log .l-warn { color: #d29922; }
+
+#rootName { cursor: pointer; overflow: hidden; text-overflow: ellipsis; }
+#rootName:hover { color: var(--accent); }
+
+/* ---- open-folder dialog ------------------------------------------------- */
+.dlg {
+  border: 1px solid var(--border); border-radius: 10px; padding: 0;
+  width: min(560px, 92vw); background: var(--bg-2); color: var(--fg);
+}
+.dlg::backdrop { background: rgba(0, 0, 0, .45); }
+.dlg-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 9px 12px; font-weight: 600; border-bottom: 1px solid var(--border);
+}
+.dlg-row { display: flex; gap: 6px; padding: 10px 12px 4px; }
+.dlg-row input {
+  flex: 1; background: var(--bg); color: var(--fg); font: inherit;
+  border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px;
+  direction: ltr;
+}
+.dlg-recent {
+  display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+  padding: 0 12px 8px; color: var(--fg-dim); font-size: 12px; min-height: 0;
+}
+.chip {
+  background: var(--bg-3); color: var(--fg); font: inherit;
+  border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; cursor: pointer;
+}
+.chip:hover { border-color: var(--accent); }
+.dlg-list {
+  list-style: none; margin: 0; padding: 4px 6px; max-height: 44vh; overflow: auto;
+  border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+}
+.dlg-item {
+  padding: 4px 8px; border-radius: 5px; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.dlg-item:hover { background: var(--bg-3); }
+.dlg-empty { padding: 6px 8px; color: var(--fg-dim); }
+.dlg-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 12px; }
+
+/* ---- CodeMirror 5 -------------------------------------------------------- */
+.CodeMirror {
+  height: 100%;
+  line-height: 1.7;
+  font-family: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas,
+               "XB Niloofar", "Vazirmatn", Tahoma, monospace;
+  font-size: 14px;
+}
+.CodeMirror-scroll { min-height: 100%; }
+
+/* CodeMirror's editor-wide direction stays LTR (so pure-LaTeX lines get no bidi
+   and a plain logical caret). A line that needs RTL gets `direction: rtl` on its
+   own <pre>, which flips the base direction *and* the start edge (right-aligned).
+   CodeMirror positions the caret from measured DOM rects, so it tracks the
+   shifted glyphs — this is exactly CodeMirror's own `.CodeMirror-rtl pre` trick,
+   applied per line instead of editor-wide.
+
+   dir: auto (default) — a non-command line containing Persian goes RTL. */
+.CodeMirror pre.CodeMirror-line.rtl-line,
+.CodeMirror pre.CodeMirror-line-like.rtl-line { direction: rtl; text-align: right; }
+.rtl-line-wrap, .rtl-line-wrap > pre { direction: rtl; text-align: right; }
+
+/* dir: rtl / dir: ltr — force every line the same way (wins over the per-line rule).
+   .force-rtl / .force-ltr sit on the .CodeMirror wrapper itself. */
+.CodeMirror.force-rtl pre.CodeMirror-line,
+.CodeMirror.force-rtl pre.CodeMirror-line-like { direction: rtl !important; text-align: right !important; }
+.CodeMirror.force-ltr pre.CodeMirror-line,
+.CodeMirror.force-ltr pre.CodeMirror-line-like { direction: ltr !important; text-align: left !important; }
+
+/* blend both themes with the app chrome */
+.cm-s-default.CodeMirror { background: var(--bg); color: #1f2328; }
+.cm-s-default .CodeMirror-gutters { background: var(--bg-2); border: none; }
+.cm-s-default .CodeMirror-linenumber { color: #b3b9c4; }
+.cm-s-material-darker.CodeMirror { background: var(--bg); color: #d7dae0; }
+.cm-s-material-darker .CodeMirror-gutters { background: var(--bg-2); border: none; }
+.cm-s-material-darker .CodeMirror-linenumber { color: #5c6370; }
+.CodeMirror-activeline-background { background: rgba(128, 140, 170, .10) !important; }
+.CodeMirror-matchingbracket { outline: 1px solid var(--accent); color: inherit !important; }
+
+/* selection: solid blue box, white text (needs the mark-selection addon +
+   styleSelectedText:true in app.js so the glyphs get .CodeMirror-selectedtext) */
+.CodeMirror-selected,
+.CodeMirror-focused .CodeMirror-selected { background: var(--sel-bg) !important; }
+.CodeMirror-line::selection,
+.CodeMirror-line > span::selection,
+.CodeMirror-line > span > span::selection { background: var(--sel-bg); color: var(--sel-fg); }
+.CodeMirror-selectedtext,
+.CodeMirror-selectedtext span { color: var(--sel-fg) !important; }
+
+/* token colours — light */
+.cm-s-default .cm-tag       { color: #0b5fa5; font-weight: 600; }  /* \chapter \begin … */
+.cm-s-default .cm-bracket   { color: #b26b00; }                     /* { } [ ] $ */
+.cm-s-default .cm-comment   { color: #8a8f98; font-style: italic; } /* %… */
+.cm-s-default .cm-string    { color: #0a7b34; }
+.cm-s-default .cm-number,
+.cm-s-default .cm-atom      { color: #9a5000; }
+.cm-s-default .cm-keyword   { color: #a1268b; }
+.cm-s-default .cm-variable-2{ color: #7a5c00; }                     /* math-mode body */
+.cm-s-default .cm-def       { color: #0b5fa5; }
+.cm-s-default .cm-error     { color: #d11; }
+
+/* token colours — dark (override material-darker) */
+.cm-s-material-darker .cm-tag       { color: #7aa2f7; font-weight: 600; }
+.cm-s-material-darker .cm-bracket   { color: #e0af68; }
+.cm-s-material-darker .cm-comment   { color: #5c6370; font-style: italic; }
+.cm-s-material-darker .cm-string    { color: #9ece6a; }
+.cm-s-material-darker .cm-number,
+.cm-s-material-darker .cm-atom      { color: #ff9e64; }
+.cm-s-material-darker .cm-keyword   { color: #bb9af7; }
+.cm-s-material-darker .cm-variable-2{ color: #e0af68; }
+.cm-s-material-darker .cm-def       { color: #7dcfff; }
+.cm-s-material-darker .cm-error     { color: #f7768e; }
+
+/* hint popup follows the theme */
+.CodeMirror-hints {
+  background: var(--bg-2); border: 1px solid var(--border);
+  color: var(--fg); font-family: inherit; z-index: 40;
+}
+.CodeMirror-hint { color: var(--fg); }
+li.CodeMirror-hint-active { background: var(--accent); color: var(--accent-fg); }

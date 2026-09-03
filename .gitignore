@@ -1,0 +1,23 @@
+# dependencies (the tool is zero-dependency; this is only for tooling/experiments)
+node_modules/
+
+# vendored CodeMirror copies for offline use (see README "Notes & limits")
+public/vendor/
+
+# editor / OS cruft
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/
+
+# latexmk / TeX build artefacts, if the workspace root ever points here
+*.aux
+*.bbl
+*.bcf
+*.fdb_latexmk
+*.fls
+*.out
+*.run.xml
+*.synctex.gz
+*.toc
