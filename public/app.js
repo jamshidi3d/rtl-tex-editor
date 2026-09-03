@@ -648,6 +648,10 @@ function initPdfViewer() {
     eventBus: pdfEventBus,
     linkService: pdfLinkService,
     textLayerMode: 1,
+    // AnnotationEditorType.DISABLE — otherwise PDFViewer builds an
+    // AnnotationEditorUIManager with no altTextManager, whose destroy() then
+    // throws "can't access property destroy, this.#st is null" on teardown.
+    annotationEditorMode: -1,
   });
   pdfLinkService.setViewer(pdfViewer);
   pdfEventBus.on('pagesinit', () => {
