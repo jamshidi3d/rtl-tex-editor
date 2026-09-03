@@ -26,6 +26,12 @@ const LATEX_CMDS = ['\\section', '\\subsection', '\\subsubsection', '\\chapter',
 const LATEX_ENVS = ['equation', 'equation*', 'align', 'align*', 'gather', 'itemize', 'enumerate',
   'description', 'figure', 'table', 'tabular', 'center', 'quote', 'quotation', 'verbatim',
   'latin', 'persian', 'matrix', 'bmatrix', 'pmatrix', 'vmatrix', 'cases', 'split', 'proof', 'abstract'];
+// commands (name without backslash) whose completion should drop in a `{}` and
+// put the caret inside it; `frac` gets `{}{}`.
+const ARG_CMDS = new Set(['section', 'subsection', 'subsubsection', 'chapter', 'part', 'paragraph',
+  'textbf', 'textit', 'emph', 'texttt', 'underline', 'label', 'ref', 'eqref', 'pageref', 'autoref',
+  'cite', 'citep', 'citet', 'parencite', 'textcite', 'nocite', 'footnote', 'caption', 'includegraphics',
+  'usepackage', 'input', 'include', 'lr', 'rl', 'hat', 'bar', 'tilde', 'vec', 'sqrt', 'frac']);
 let BIB_KEYS = [];
 
 function collectMacros(text) {
@@ -169,6 +175,35 @@ function applyDir() {
 }
 const cmTheme = (name) => (name === 'dark' ? 'material-darker' : 'default');
 
+// Accepting an env in `\begin{…}` drops in the whole block; the caret lands on
+// an indented body line (list envs get `\item`). `\end{…}` just closes the brace.
+function expandEnv(cm, data, comp) {
+  const P = CodeMirror.Pos;
+  const env = comp.text;
+  const line = data.from.line;
+  const indent = /^\s*/.exec(cm.getLine(line))[0];
+  const step = ' '.repeat(cm.getOption('indentUnit') || 2);
+  const body = /^(itemize|enumerate|description)\*?$/.test(env) ? step + '\\item ' : step;
+  let to = data.to;
+  if (cm.getRange(to, P(to.line, to.ch + 1)) === '}') to = P(to.line, to.ch + 1); // eat a pre-typed }
+  cm.replaceRange(env + '}\n' + indent + body + '\n' + indent + '\\end{' + env + '}', data.from, to, 'complete');
+  cm.setCursor(P(line + 1, (indent + body).length));
+}
+
+// Accepting an argument-taking command drops in its braces with the caret inside.
+function expandCmd(cm, data, comp, pair) {
+  const P = CodeMirror.Pos;
+  const cmd = comp.text;
+  const to = data.to;
+  if (cm.getRange(to, P(to.line, to.ch + 1)) === '{') { // already followed by a brace
+    cm.replaceRange(cmd, data.from, to, 'complete');
+    cm.setCursor(P(data.from.line, data.from.ch + cmd.length));
+    return;
+  }
+  cm.replaceRange(cmd + pair, data.from, to, 'complete');
+  cm.setCursor(P(data.from.line, data.from.ch + cmd.length + 1));
+}
+
 function latexHint(editor) {
   const pos = editor.getCursor();
   const before = editor.getLine(pos.line).slice(0, pos.ch);
@@ -179,15 +214,25 @@ function latexHint(editor) {
     const list = BIB_KEYS.filter((k) => k.toLowerCase().includes(w));
     return { list: list.length ? list : BIB_KEYS, from: P(pos.line, pos.ch - m[1].length), to: pos };
   }
-  if ((m = /\\(?:begin|end)\{([a-zA-Z*]*)$/.exec(before))) {
-    const w = m[1];
-    return { list: LATEX_ENVS.filter((e) => e.startsWith(w)), from: P(pos.line, pos.ch - w.length), to: pos };
+  if ((m = /\\(begin|end)\{([a-zA-Z*]*)$/.exec(before))) {
+    const kw = m[1];
+    const w = m[2];
+    const envs = LATEX_ENVS.filter((e) => e.startsWith(w));
+    const from = P(pos.line, pos.ch - w.length);
+    if (kw === 'end') return { list: envs, from, to: pos };
+    return { list: envs.map((env) => ({ text: env, displayText: env, hint: expandEnv })), from, to: pos };
   }
   if ((m = /\\([a-zA-Z]*)$/.exec(before))) {
     const w = m[1];
     const all = [...new Set(LATEX_CMDS.concat(collectMacros(editor.getValue())))];
-    const list = all.filter((c) => c.slice(1).startsWith(w));
-    return { list: list.length ? list : all, from: P(pos.line, pos.ch - w.length - 1), to: pos };
+    const hits = all.filter((c) => c.slice(1).startsWith(w));
+    const list = (hits.length ? hits : all).map((c) => {
+      const name = c.slice(1);
+      if (name === 'frac') return { text: c, displayText: c, hint: (cm, d, x) => expandCmd(cm, d, x, '{}{}') };
+      if (ARG_CMDS.has(name)) return { text: c, displayText: c, hint: (cm, d, x) => expandCmd(cm, d, x, '{}') };
+      return c;
+    });
+    return { list, from: P(pos.line, pos.ch - w.length - 1), to: pos };
   }
   return null;
 }
