@@ -334,6 +334,12 @@ body {
 .CodeMirror pre.CodeMirror-line.rtl-line,
 .CodeMirror pre.CodeMirror-line-like.rtl-line { direction: rtl; text-align: right; }
 .rtl-line-wrap, .rtl-line-wrap > pre { direction: rtl; text-align: right; }
+/* On an RTL line, render each \command / brace token as its own LTR island so
+   the browser's bidi keeps the "\" with its letters (matches bidiOrder's
+   charType override for "\"). */
+.CodeMirror pre.CodeMirror-line.rtl-line :is(.cm-tag, .cm-def, .cm-bracket, .cm-keyword) {
+  unicode-bidi: plaintext;
+}
 
 /* dir: rtl / dir: ltr — force every line the same way (wins over the per-line rule).
    .force-rtl / .force-ltr sit on the .CodeMirror wrapper itself. */
