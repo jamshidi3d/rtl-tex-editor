@@ -17,6 +17,7 @@ const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
 const url = require('url');
+const zlib = require('zlib');
 const { spawn } = require('child_process');
 
 // ---- args -----------------------------------------------------------------
@@ -125,6 +126,48 @@ async function buildTree(dir, depth, budget) {
   return out;
 }
 
+// Minimal forward SyncTeX lookup (source line -> PDF page). Parses the plain
+// text of a .synctex(.gz) file: `Input:<tag>:<path>` lines name the source
+// files; box/glue records `<type><tag>,<line>[,<col>]:<h>,<v>...` carry the
+// source line; `{<n>` / `}` bracket each page. We return the page of the record
+// whose source line is closest to the requested one.
+function synctexForward(text, want, wantLine) {
+  const lines = text.split('\n');
+  const inputs = new Map();
+  for (const l of lines) {
+    const m = /^Input:(\d+):(.+?)\s*$/.exec(l);
+    if (m) inputs.set(Number(m[1]), m[2].replace(/\\/g, '/').toLowerCase());
+  }
+  const abs = want.abs.toLowerCase();
+  const rel = want.rel.toLowerCase();
+  const relDot = './' + rel;
+  const base = want.base.toLowerCase();
+  let tag = null;
+  for (const [t, p] of inputs) {
+    if (p === abs || p === rel || p === relDot || p.endsWith('/' + rel)) { tag = t; break; }
+  }
+  if (tag == null) for (const [t, p] of inputs) {
+    if (p.split('/').pop() === base) { tag = t; break; }
+  }
+  if (tag == null) return null;
+
+  const rec = /^[([<hvxkg$](\d+),(\d+)(?:,\d+)?:/;
+  let page = 0;
+  let best = null;
+  for (const l of lines) {
+    if (l.charCodeAt(0) === 123 /* { */) { const n = parseInt(l.slice(1), 10); if (Number.isFinite(n)) page = n; continue; }
+    const m = rec.exec(l);
+    if (!m || Number(m[1]) !== tag) continue;
+    const rl = Number(m[2]);
+    const d = Math.abs(rl - wantLine);
+    if (!best || d < best.d || (d === best.d && rl >= wantLine && best.rl < wantLine)) {
+      best = { d, rl, page };
+      if (d === 0) break;
+    }
+  }
+  return best ? { page: best.page, line: best.rl } : null;
+}
+
 function run(cmd, cwd) {
   return new Promise((resolve) => {
     const child = spawn(cmd, { cwd, shell: true, windowsHide: true, timeout: 180000 });
@@ -151,8 +194,38 @@ async function api(req, res, pathname, query) {
       rootFromCli: ROOT_FROM_CLI,
       lockRoot: LOCK_ROOT,
       latexmk: r.code === 0,
+      synctex: r.code === 0, // we parse the .synctex.gz ourselves (latexmk builds with -synctex=1)
       version: (r.out.match(/Version[^\n]*/) || [''])[0].trim(),
     });
+  }
+
+  if (pathname === '/api/synctex' && req.method === 'GET') {
+    const main = query.main;
+    const file = query.file;
+    const line = parseInt(query.line, 10);
+    if (!main || !file || !Number.isFinite(line)) return json(res, 400, { error: 'need main, file, line' });
+    const texAbs = safeResolve(main);
+    const cwd = path.dirname(texAbs);
+    const bpdf = path.join(cwd, path.basename(texAbs).replace(/\.tex$/i, ''));
+    const srcAbs = safeResolve(file);
+    let gz;
+    for (const gp of [bpdf + '.synctex.gz', bpdf + '.synctex']) {
+      try { gz = await fsp.readFile(gp); break; } catch {}
+    }
+    if (!gz) return json(res, 200, { ok: false, error: 'no .synctex.gz — build first' });
+    let hit;
+    try {
+      const text = gz[0] === 0x1f && gz[1] === 0x8b ? zlib.gunzipSync(gz).toString('latin1') : gz.toString('latin1');
+      hit = synctexForward(text, {
+        abs: srcAbs.split(path.sep).join('/'),
+        rel: path.relative(cwd, srcAbs).split(path.sep).join('/'),
+        base: path.basename(srcAbs),
+      }, line);
+    } catch (e) {
+      return json(res, 200, { ok: false, error: 'synctex parse: ' + e.message });
+    }
+    if (!hit) return json(res, 200, { ok: false, error: 'no record for that line' });
+    return json(res, 200, { ok: true, page: hit.page, srcLine: hit.line });
   }
 
   if (pathname === '/api/root' && req.method === 'POST') {
@@ -245,7 +318,7 @@ async function api(req, res, pathname, query) {
     const base = path.basename(abs).replace(/\.tex$/i, '');
     const t0 = Date.now();
     const cmd =
-      `latexmk -${ENGINE} -shell-escape -interaction=nonstopmode -halt-on-error ` +
+      `latexmk -${ENGINE} -synctex=1 -shell-escape -interaction=nonstopmode -halt-on-error ` +
       `-file-line-error "${base}"`;
     const r = await run(cmd, cwd);
     const pdfAbs = path.join(cwd, base + '.pdf');

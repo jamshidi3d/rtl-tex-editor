@@ -273,6 +273,8 @@ function initEditor() {
   applyDir();
   markAllCmdLines();
   cm.on('change', () => { setDirty(isDirty()); if (previewMode === 'md') scheduleMd(); });
+  cm.on('scroll', rafThrottle(syncFromEditor));
+  $('#mdView').addEventListener('scroll', rafThrottle(mdSyncFromPreview));
   cm.on('changes', (ed, changes) => {
     let lo = Infinity;
     let hi = -1;
@@ -386,6 +388,8 @@ async function build() {
       $('#openPdf').href = src;
       $('#pdfWrap').classList.remove('empty-shown');
       setPreviewMode('pdf');
+      lastPdfPage = 0;
+      if (syncOn) $('#pdf').addEventListener('load', () => syncFromEditor(), { once: true });
     } else {
       setStatus('build failed', 'err');
       $('#logbar').classList.remove('collapsed');
@@ -416,6 +420,7 @@ function renderLog(text) {
 // libraries are pulled from the CDN the first time they're needed.
 const MD_RE = /\.(md|markdown|mdown|mkd|mkdn|mdwn)$/i;
 const CDN = 'https://cdnjs.cloudflare.com/ajax/libs/';
+const SENT = String.fromCharCode(0xe000); // private-use sentinel for placeholders
 let previewMode = 'pdf';
 let mdTimer = null;
 const _assets = {};
@@ -452,18 +457,22 @@ function setPreviewMode(m) {
   $('#pdfWrap').classList.toggle('empty-shown', !md && !$('#pdf').src);
 }
 
-// Split off code and math spans before marked runs (so it can't eat the
-// backslashes / underscores inside math), then splice KaTeX back into the
-// sanitised DOM, skipping anything inside <code>/<pre>.
+// Turn Markdown source into a DOM tree.
+//  - code fences / inline code and math ($…$, $$…$$, \(…\), \[…\]) are pulled
+//    out before marked parses, so it can't mangle the backslashes / underscores;
+//    math is spliced back as KaTeX afterwards, skipping anything in <code>/<pre>.
+//  - every top-level block gets data-src-line (0-based) for editor <-> preview
+//    scroll sync; math placeholders keep the newline count of what they replaced
+//    so those line numbers stay aligned with the editor.
 function mdToDom(src) {
-  const S = '';
+  const S = SENT;
   const code = [];
   let s = src.replace(/(^|\n)([ \t]*)(```+|~~~+)[^\n]*\n[\s\S]*?\n\2\3[ \t]*(?=\n|$)/g,
     (m) => `${S}C${code.push(m) - 1}${S}`);
   s = s.replace(/`[^`\n]+`/g, (m) => `${S}C${code.push(m) - 1}${S}`);
 
   const math = [];
-  const put = (x, d) => `${S}K${math.push({ x, d }) - 1}${S}`;
+  const put = (x, d) => `${S}K${math.push({ x, d }) - 1}${S}` + '\n'.repeat((x.match(/\n/g) || []).length);
   s = s.replace(/\$\$([\s\S]+?)\$\$/g, (_, x) => put(x, true));
   s = s.replace(/\\\[([\s\S]+?)\\\]/g, (_, x) => put(x, true));
   s = s.replace(/\\\(([\s\S]+?)\\\)/g, (_, x) => put(x, false));
@@ -472,13 +481,25 @@ function mdToDom(src) {
 
   s = s.replace(new RegExp(S + 'C(\\d+)' + S, 'g'), (_, i) => code[+i]); // restore code for marked
 
-  let html = window.marked.parse(s, { gfm: true, breaks: false });
-  html = window.DOMPurify.sanitize(html, { ADD_ATTR: ['align'] });
+  const M = window.marked;
+  const toks = M.lexer(s);
+  let line = 0;
+  const parts = [];
+  for (const tok of toks) {
+    const start = line;
+    line += (tok.raw.match(/\n/g) || []).length;
+    if (tok.type === 'space') continue;
+    let frag = M.parser([tok]);
+    frag = frag.replace(/^(\s*)(<[a-zA-Z][\w:-]*)/, `$1$2 data-src-line="${start}"`);
+    parts.push(frag);
+  }
+  let html = window.DOMPurify.sanitize(parts.join('\n'), { ADD_ATTR: ['align'] });
 
   const root = document.createElement('div');
   root.innerHTML = html;
 
   const reK = new RegExp(S + 'K(\\d+)' + S);
+  const reKg = new RegExp(S + 'K(\\d+)' + S, 'g');
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const hits = [];
   while (walker.nextNode()) {
@@ -486,7 +507,6 @@ function mdToDom(src) {
     if (!reK.test(n.nodeValue) || (n.parentElement && n.parentElement.closest('code, pre'))) continue;
     hits.push(n);
   }
-  const reKg = new RegExp(S + 'K(\\d+)' + S, 'g');
   for (const n of hits) {
     const frag = document.createDocumentFragment();
     let last = 0; let m; const str = n.nodeValue;
@@ -540,9 +560,101 @@ async function renderMd() {
   view.innerHTML = '';
   view.append(out.root);
   view.scrollTop = top;
+  mdAnchors = [...view.querySelectorAll('[data-src-line]')]
+    .map((el) => ({ line: +el.dataset.srcLine, el }))
+    .sort((a, b) => a.line - b.line);
   if (out.hasMermaid) renderMermaid(view);
+  if (syncOn) syncFromEditor();
 }
 function scheduleMd() { clearTimeout(mdTimer); mdTimer = setTimeout(renderMd, 220); }
+
+// ------------------------------------------------------------------ view sync
+// A toggle (⇅) links editor and preview scrolling.
+//   Markdown: bidirectional, anchored on the data-src-line of each block.
+//   PDF:      editor -> PDF page only, via SyncTeX (the embedded PDF viewer
+//             gives us no scroll position back, so reverse isn't possible).
+let syncOn = false;
+let syncCap = { synctex: false };
+let mdAnchors = [];
+let syncLock = 0;
+let pdfSyncTimer = null;
+let lastPdfPage = 0;
+const isLocked = () => performance.now() < syncLock;
+const lockSync = (ms) => { syncLock = performance.now() + (ms || 250); };
+function rafThrottle(fn) {
+  let queued = false;
+  return () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; fn(); }); };
+}
+function editorTopLine() {
+  return cm.lineAtHeight(cm.getScrollInfo().top + 2, 'local');
+}
+function syncFromEditor() {
+  if (!syncOn || isLocked()) return;
+  if (previewMode === 'md') mdSyncFromEditor();
+  else pdfSyncFromEditor();
+}
+function mdSyncFromEditor() {
+  if (previewMode !== 'md' || !mdAnchors.length) return;
+  const view = $('#mdView');
+  const top = editorTopLine();
+  let i = 0;
+  while (i + 1 < mdAnchors.length && mdAnchors[i + 1].line <= top) i++;
+  const a = mdAnchors[i];
+  const b = mdAnchors[i + 1];
+  const aTop = a.el.offsetTop;
+  const bTop = b ? b.el.offsetTop : view.scrollHeight;
+  const span = b ? b.line - a.line : Math.max(1, top - a.line + 1);
+  const frac = Math.max(0, Math.min(1, (top - a.line) / span));
+  lockSync();
+  view.scrollTop = aTop + (bTop - aTop) * frac - 6;
+}
+function mdSyncFromPreview() {
+  if (!syncOn || isLocked() || previewMode !== 'md' || !mdAnchors.length) return;
+  const view = $('#mdView');
+  const y = view.scrollTop + 6;
+  let i = 0;
+  while (i + 1 < mdAnchors.length && mdAnchors[i + 1].el.offsetTop <= y) i++;
+  const a = mdAnchors[i];
+  const b = mdAnchors[i + 1];
+  const aTop = a.el.offsetTop;
+  const bTop = b ? b.el.offsetTop : view.scrollHeight;
+  const span = b ? b.line - a.line : 1;
+  const frac = bTop > aTop ? Math.max(0, Math.min(1, (y - aTop) / (bTop - aTop))) : 0;
+  lockSync();
+  cm.scrollTo(null, cm.heightAtLine(Math.floor(a.line + span * frac), 'local') - 4);
+}
+function pdfSyncFromEditor() {
+  if (previewMode !== 'pdf' || !syncCap.synctex) return;
+  if (!curf.path || !/\.tex$/i.test(curf.path)) return;
+  const main = $('#mainFile').value;
+  if (!main) return;
+  const line = editorTopLine() + 1;
+  clearTimeout(pdfSyncTimer);
+  pdfSyncTimer = setTimeout(async () => {
+    let r;
+    try {
+      r = (await api('/api/synctex?main=' + encodeURIComponent(main) +
+        '&file=' + encodeURIComponent(curf.path) + '&line=' + line)).body;
+    } catch { return; }
+    if (!r || !r.ok || !r.page || r.page === lastPdfPage) return;
+    lastPdfPage = r.page;
+    gotoPdfPage(r.page);
+  }, 300);
+}
+function gotoPdfPage(page) {
+  const f = $('#pdf');
+  const cur = f.getAttribute('src') || '';
+  if (!cur) return;
+  const base = cur.split('#')[0];
+  try {
+    // Chrome's built-in viewer navigates on a hash change without reloading.
+    if (f.contentWindow && f.contentWindow.location) {
+      f.contentWindow.location.hash = 'page=' + page;
+      return;
+    }
+  } catch (e) { /* cross-origin (Firefox pdf.js) — fall through to src */ }
+  f.setAttribute('src', base + '#page=' + page);
+}
 
 // ------------------------------------------------------------------ status
 let statusTimer = null;
@@ -745,6 +857,12 @@ $('#dirBtn').addEventListener('click', () => {
   $('#dirBtn').textContent = 'dir: ' + next;
   applyDir();
 });
+$('#sync').addEventListener('click', () => {
+  syncOn = !syncOn;
+  LS.set('sync', syncOn);
+  $('#sync').classList.toggle('on', syncOn);
+  if (syncOn) { lastPdfPage = 0; syncFromEditor(); }
+});
 $('#logToggle').addEventListener('click', () => {
   const c = $('#logbar').classList.toggle('collapsed');
   $('#logToggle').textContent = (c ? '▸' : '▾') + ' build log';
@@ -857,6 +975,8 @@ function restoreLayout() {
   let dm = LS.get('dir', 'auto');
   if (!['rtl', 'auto', 'ltr'].includes(dm)) { dm = 'auto'; LS.set('dir', dm); }
   $('#dirBtn').textContent = 'dir: ' + dm;
+  syncOn = LS.get('sync', false);
+  $('#sync').classList.toggle('on', syncOn);
   $('#showAux').checked = LS.get('showAux', false);
   $('#workbench').style.setProperty('--sidebar-w', LS.get('sidebarW', 260) + 'px');
   const ef = LS.get('edFlex', 0.5);
@@ -875,6 +995,9 @@ async function boot() {
   try {
     const { body } = await api('/api/health');
     if (body.lockRoot) $('#openFolder').style.display = 'none';
+    syncCap.synctex = !!body.synctex;
+    $('#sync').title = 'scroll editor ↔ preview together '
+      + '(Markdown: two-way; PDF: editor → page via SyncTeX)';
     setStatus(body.latexmk ? (body.version || 'latexmk ready') : 'latexmk not found on PATH', body.latexmk ? 'ok' : 'err');
   } catch (e) { setStatus('server: ' + e.message, 'err'); }
   await loadTree();

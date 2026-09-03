@@ -46,6 +46,7 @@ switch below).
 |---|---|
 | Open a file | click it in the tree (left) |
 | Preview pane | PDF viewer for `.tex` work; switches to a live **Markdown** viewer when a `.md` file is open (GFM tables, KaTeX `$…$` / `$$…$$` math, ` ```mermaid ` diagrams). **Build** switches it back to the PDF. |
+| Scroll sync | **⇅ sync** links editor and preview scrolling. Markdown is two-way (anchored on each block's source line); PDF is editor → page only, via SyncTeX (the embedded PDF viewer reports no scroll position, so the reverse isn't possible). State is remembered. |
 | Change workspace folder | 📁 in the tree header (or click the folder name) → browse / paste a path / pick a recent one. Disabled with `--lock-root`. |
 | Save | `Ctrl/Cmd+S` (💾) — conflict-checked against disk mtime |
 | Build | **Build ▶** or `Ctrl/Cmd+B` — saves the open file first, then runs `latexmk` |
@@ -67,8 +68,10 @@ the tree.
 ## Notes & limits
 
 - **PDF pane** = the browser's native PDF viewer in an `<iframe>`; it reloads
-  after each successful build. No SyncTeX yet (see `bidi-extension.md` §5 for the
-  `synctex view/edit` upgrade).
+  after each successful build. Forward sync (editor → PDF page) parses the
+  `.synctex.gz` that `latexmk -synctex=1` writes — no external `synctex` binary
+  needed. Page granularity only, and the embedded viewer may flash when it jumps
+  pages. Reverse sync (PDF → editor) isn't possible with the native viewer.
 - **Markdown pane** renders with `marked` + `DOMPurify`, `KaTeX`, and `mermaid`,
   all loaded from cdnjs the first time a `.md` file is opened (mermaid is ~3 MB —
   fetched only if a diagram is present). Math is protected from the Markdown
