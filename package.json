@@ -1,9 +1,9 @@
 {
-  "name": "rtl-web-editor",
+  "name": "rtl-tex-editor",
   "version": "0.1.0",
   "private": true,
-  "description": "Local web editor for mixed RTL/LTR LaTeX, with live PDF preview.",
-  "bin": { "rtl-web-editor": "server.js" },
+  "description": "Local web editor for mixed RTL/LTR TeX, with a live pdf.js preview and two-way SyncTeX.",
+  "bin": { "rtl-tex-editor": "server.js" },
   "scripts": {
     "start": "node server.js",
     "thesis": "node server.js --root .. --engine xelatex"

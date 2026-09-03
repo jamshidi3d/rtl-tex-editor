@@ -1,13 +1,17 @@
-# RTL-Web-Editor
+# RTL TeX Editor
 
-A local, single-purpose editor for the mixed **RTL/LTR** LaTeX of the thesis:
-CodeMirror 5 taught **per-line base direction** — a non-command line containing
-Persian is RTL (right-aligned, RTL bidi order, RTL caret motion); `\command`
-lines, symbols and English stay LTR — plus a **live PDF** split view, a **folder
-tree**, and **light/dark** syntax themes.
+A local, single-purpose editor for mixed **RTL/LTR** TeX (a Persian thesis, in
+particular): CodeMirror 5 taught **per-line base direction** — a non-command
+line containing Persian is RTL (right-aligned, RTL bidi order, RTL caret
+motion); `\command` lines, symbols and English stay LTR — plus a **live pdf.js
+preview** with **two-way SyncTeX** (caret ↔ page, click a paragraph → open the
+source), a **folder tree**, and **light/dark** themes (incl. a dark PDF).
+
+UI text is **DejaVu Sans**; Persian / RTL text is **IRANSansWeb**.
 
 Architecture follows `bidi-extension.md` §3-A / §5: a tiny Node host
-(`server.js`) does file I/O + `latexmk`; the browser (`public/`) is the editor.
+(`server.js`) does file I/O + `latexmk` + SyncTeX parsing; the browser
+(`public/`) is the editor.
 
 ---
 
@@ -15,22 +19,35 @@ Architecture follows `bidi-extension.md` §3-A / §5: a tiny Node host
 
 Requires **Node ≥ 18** and **TeX Live** (`latexmk` on `PATH`).
 
-### Windows — `rtl-editor.bat`
+### Windows — `rtl-tex-editor.bat`
 
 ```bat
-rtl-editor.bat                     ::  root = parent folder of the script
-rtl-editor.bat  D:\papers\draft    ::  root = that folder
-rtl-editor.bat  D:\papers\draft 5200   ::  ... on port 5200
+rtl-tex-editor.bat                       ::  root = parent folder of the script
+rtl-tex-editor.bat  D:\papers\draft      ::  root = that folder
+rtl-tex-editor.bat  D:\papers\draft 5200 ::  ... on port 5200
 ```
 
 Starts the server in its own window and opens the URL in your default browser.
-You can also **drag a folder onto the .bat** to open the editor rooted there.
-Env: `RWE_PORT`, `RWE_ENGINE` (`xelatex` | `pdflatex` | `lualatex`).
+You can also **drag a folder onto the .bat**.
+
+### Linux / macOS — `rtl-tex-editor.sh`
+
+```sh
+./rtl-tex-editor.sh                    #  root = parent folder of the script
+./rtl-tex-editor.sh  ~/papers/draft    #  root = that folder
+./rtl-tex-editor.sh  ~/papers/draft 5200
+```
+
+Runs the server in the foreground (Ctrl+C stops it) and opens the URL via
+`open` (macOS) / `xdg-open` (Linux).
+
+Both launchers honour `RWE_PORT` and `RWE_ENGINE` (`xelatex` | `pdflatex` |
+`lualatex`).
 
 ### Any OS — `node`
 
 ```sh
-node RTL-WebEditor/server.js --root . --engine xelatex
+node rtl-tex-editor/server.js --root . --engine xelatex
 #   then open http://127.0.0.1:5199
 ```
 
@@ -82,6 +99,8 @@ the tree.
 - **CodeMirror 5 (5.65.16) loads from cdnjs** via plain `<script>`/`<link>` tags
   in `index.html` — needs network on first load (then cached). To vendor for
   offline use, drop the pinned files into `public/vendor/` and repoint the tags.
+- **Fonts** (DejaVu Sans, IRANSansWeb) load from jsDelivr via `@font-face` in
+  `styles.css`, `font-display: swap` — offline you just get the system fallback.
 - `server.js` runs `latexmk -shell-escape` and can read/write anywhere under
   `--root`. It binds to `127.0.0.1` only. Point `--root` at a folder you trust.
 - Single-file editor: no folding-config, multi-cursor niceties, minimap, or

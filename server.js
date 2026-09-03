@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /*
- * RTL-Web-Editor — local host process.
+ * RTL TeX Editor — local host process.
  *
  *   node server.js [--root <dir>] [--port <n>] [--engine xelatex|pdflatex|lualatex]
  *
@@ -518,7 +518,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`RTL-Web-Editor  →  http://127.0.0.1:${PORT}`);
+  console.log(`RTL TeX Editor  →  http://127.0.0.1:${PORT}`);
   console.log(`  root   : ${ROOT}`);
   console.log(`  engine : ${ENGINE}   (latexmk -${ENGINE} -shell-escape)`);
 });

@@ -1,6 +1,7 @@
-/* RTL-Web-Editor — browser front-end (CodeMirror 5, plain script).
- * Editor with RTL/LTR direction, stex syntax highlighting, live PDF preview,
- * folder tree + folder switcher. Talks to server.js over /api/*.
+/* RTL TeX Editor — browser front-end (CodeMirror 5, plain script).
+ * Editor with per-line RTL/LTR direction, stex syntax highlighting, live pdf.js
+ * preview with two-way SyncTeX, folder tree + folder switcher.
+ * Talks to server.js over /api/*.
  */
 (function () {
 'use strict';

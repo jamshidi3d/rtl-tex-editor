@@ -1,3 +1,28 @@
+/* ---- fonts ------------------------------------------------------------- */
+/* DejaVu Sans for the UI chrome, IRANSansWeb for Persian / RTL text.
+   Loaded from jsDelivr (font-display: swap -> graceful offline fallback). */
+@font-face {
+  font-family: "DejaVu Sans"; font-weight: 400; font-display: swap;
+  src: url("https://cdn.jsdelivr.net/npm/@fontsource/dejavu-sans@5/files/dejavu-sans-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "DejaVu Sans"; font-weight: 700; font-display: swap;
+  src: url("https://cdn.jsdelivr.net/npm/@fontsource/dejavu-sans@5/files/dejavu-sans-latin-700-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IRANSansWeb"; font-weight: 400; font-display: swap;
+  src: url("https://cdn.jsdelivr.net/npm/iransans@1.0.0/woff2/IRANSansWeb.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IRANSansWeb"; font-weight: 700; font-display: swap;
+  src: url("https://cdn.jsdelivr.net/npm/iransans@1.0.0/woff2/IRANSansWeb_Bold.woff2") format("woff2");
+}
+:root {
+  --ui-font: "DejaVu Sans", "IRANSansWeb", ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  --rtl-font: "IRANSansWeb", "DejaVu Sans", Tahoma, sans-serif;
+  --mono-font: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas, "IRANSansWeb", Tahoma, monospace;
+}
+
 /* ---- theme tokens ------------------------------------------------------ */
 #app[data-theme="dark"] {
   --bg: #16181d;
@@ -31,7 +56,7 @@
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body {
-  font: 13px/1.5 ui-sans-serif, system-ui, "Segoe UI", Roboto, "Vazirmatn", Tahoma, sans-serif;
+  font: 13px/1.5 var(--ui-font);
   background: var(--bg);
   color: var(--fg);
 }
@@ -165,7 +190,8 @@ body {
   position: absolute; inset: 0; overflow: auto;
   background: var(--bg); color: var(--fg);
   padding: 24px 28px; line-height: 1.65;
-  font: 14px/1.65 ui-sans-serif, system-ui, "Segoe UI", Roboto, "Vazirmatn", Tahoma, sans-serif;
+  /* DejaVu has no Persian glyphs, so Persian falls through to IRANSansWeb */
+  font: 14px/1.65 var(--ui-font);
 }
 .md-view > :first-child { margin-top: 0; }
 .md-view h1, .md-view h2, .md-view h3,
@@ -288,8 +314,7 @@ body {
 .CodeMirror {
   height: 100%;
   line-height: 1.7;
-  font-family: ui-monospace, "Cascadia Code", "JetBrains Mono", Consolas,
-               "XB Niloofar", "Vazirmatn", Tahoma, monospace;
+  font-family: var(--mono-font);
   font-size: 14px;
 }
 .CodeMirror-scroll { min-height: 100%; }
@@ -303,7 +328,9 @@ body {
 
    dir: auto (default) — a non-command line containing Persian goes RTL. */
 .CodeMirror pre.CodeMirror-line.rtl-line,
-.CodeMirror pre.CodeMirror-line-like.rtl-line { direction: rtl; text-align: right; }
+.CodeMirror pre.CodeMirror-line-like.rtl-line {
+  direction: rtl; text-align: right; font-family: var(--rtl-font);
+}
 .rtl-line-wrap, .rtl-line-wrap > pre { direction: rtl; text-align: right; }
 
 /* dir: rtl / dir: ltr — force every line the same way (wins over the per-line rule).
