@@ -292,7 +292,7 @@ async function api(req, res, pathname, query) {
     }
     return send(res, 200, _pdfWorkerJs, {
       'Content-Type': 'text/javascript; charset=utf-8',
-      'Cache-Control': 'public, max-age=31536000, immutable',
+      'Cache-Control': 'no-cache',
     });
   }
 

@@ -605,9 +605,22 @@ let _pdfKeep = null;
 let pdfHlEl = null;
 let pdfFitRO = null;
 let reverseJumpGuard = 0;
+let pdfSeq = 0; // bumped on every loadPdf/unloadPdf so a stale in-flight load bails
 function debounce(fn, ms) {
   let t = null;
   return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+}
+// A cross-origin `new Worker(cdn)` is blocked, but a same-origin blob worker
+// may `importScripts()` a cross-origin script — the standard pdf.js workaround.
+// Falls back to the /api/pdfjs-worker proxy if Blob URLs are unavailable.
+function pdfWorkerSrc() {
+  const w = CDN + 'pdf.js/' + PDFJS + '/pdf.worker.min.js';
+  try {
+    return URL.createObjectURL(new Blob(['importScripts(' + JSON.stringify(w) + ');'],
+      { type: 'text/javascript' }));
+  } catch (e) {
+    return '/api/pdfjs-worker';
+  }
 }
 function ensurePdfLibs() {
   if (pdfjsReady) return pdfjsReady;
@@ -620,7 +633,7 @@ function ensurePdfLibs() {
       CDN + 'pdf.js/' + PDFJS + '/pdf_viewer.min.css',
     ]))
     .then(() => {
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc = '/api/pdfjs-worker';
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerSrc();
     });
   pdfjsReady.catch(() => { pdfjsReady = null; }); // allow retry on next build
   return pdfjsReady;
@@ -638,23 +651,42 @@ function initPdfViewer() {
   });
   pdfLinkService.setViewer(pdfViewer);
   pdfEventBus.on('pagesinit', () => {
-    pdfViewer.currentScaleValue = 'page-width';
+    try { pdfViewer.currentScaleValue = 'page-width'; } catch (e) { /* zero-size container */ }
     restorePdfScroll();
   });
   pdfFitRO = new ResizeObserver(debounce(() => {
-    if (pdfViewer && pdfViewer.pdfDocument) pdfViewer.currentScaleValue = 'page-width';
+    if (pdfViewer && pdfViewer.pdfDocument) {
+      try { pdfViewer.currentScaleValue = 'page-width'; } catch (e) { /* ignore */ }
+    }
   }, 120));
   pdfFitRO.observe($('#pdfDoc'));
   $('#pdfDoc').addEventListener('click', onPdfClick);
 }
 async function loadPdf(url) {
+  const seq = ++pdfSeq;
   await ensurePdfLibs();
+  if (seq !== pdfSeq) return;
   initPdfViewer();
-  _pdfKeep = pdfLoaded ? { page: pdfViewer.currentPageNumber } : null;
-  if (pdfDocObj) { try { pdfDocObj.destroy(); } catch {} }
-  pdfDocObj = await window.pdfjsLib.getDocument({ url }).promise;
-  pdfLinkService.setDocument(pdfDocObj, null);
-  pdfViewer.setDocument(pdfDocObj);
+  const keepPage = pdfLoaded ? pdfViewer.currentPageNumber : 0;
+  const old = pdfDocObj;
+  pdfDocObj = null; pdfLoaded = false;
+  if (old) {
+    try { pdfViewer.setDocument(null); } catch (e) { /* ignore */ }
+    try { await old.destroy(); } catch (e) { /* ignore */ }
+    if (seq !== pdfSeq) return;
+  }
+  let doc;
+  try {
+    doc = await window.pdfjsLib.getDocument({ url }).promise;
+  } catch (e) {
+    if (seq === pdfSeq) throw e;
+    return;
+  }
+  if (seq !== pdfSeq) { try { await doc.destroy(); } catch (e) { /* ignore */ } return; }
+  _pdfKeep = keepPage ? { page: keepPage } : null;
+  pdfDocObj = doc;
+  pdfLinkService.setDocument(doc, null);
+  pdfViewer.setDocument(doc);
   pdfLoaded = true;
   pdfUrl = url;
 }
@@ -665,10 +697,13 @@ function restorePdfScroll() {
   _pdfKeep = null;
 }
 function unloadPdf() {
-  if (pdfViewer) pdfViewer.setDocument(null);
-  if (pdfDocObj) { try { pdfDocObj.destroy(); } catch {} pdfDocObj = null; }
+  pdfSeq++;
+  if (pdfViewer) { try { pdfViewer.setDocument(null); } catch (e) { /* ignore */ } }
+  const old = pdfDocObj;
+  pdfDocObj = null;
   pdfLoaded = false;
   pdfUrl = null;
+  if (old) { try { old.destroy(); } catch (e) { /* ignore */ } }
 }
 function pdfGoto(page, xPt, yPt) {
   if (!pdfViewer || !pdfLoaded) return;
