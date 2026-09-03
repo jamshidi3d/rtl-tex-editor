@@ -396,8 +396,11 @@ async function build() {
       $('#pdfWrap').classList.remove('empty-shown');
       setPreviewMode('pdf');
       lastPdfPage = 0; lastPdfV = null;
-      try { await loadPdf(src); } catch (e) { setStatus('PDF viewer: ' + e.message, 'err'); }
-      if (syncOn) syncFromEditor();
+      // the PDF render is independent of the (successful) build — never let it
+      // stall the Build button or read as a build failure
+      loadPdf(src)
+        .then(() => { if (syncOn) syncFromEditor(); })
+        .catch((e) => { status200flash('built — PDF preview: ' + e.message); });
     } else {
       setStatus('build failed', 'err');
       $('#logbar').classList.remove('collapsed');
@@ -436,13 +439,16 @@ const _assets = {};
 function loadAssets(key, urls) {
   if (_assets[key]) return _assets[key];
   _assets[key] = Promise.all(urls.map((u) => new Promise((res, rej) => {
-    let el;
-    if (u.endsWith('.css')) { el = document.createElement('link'); el.rel = 'stylesheet'; el.href = u; }
-    else { el = document.createElement('script'); el.src = u; }
-    el.onload = () => res();
-    el.onerror = () => rej(new Error('could not load ' + u));
+    const css = u.endsWith('.css');
+    const el = document.createElement(css ? 'link' : 'script');
+    if (css) { el.rel = 'stylesheet'; el.href = u; } else { el.src = u; }
+    // a stylesheet that never fires onload must not stall the whole load
+    const to = setTimeout(() => (css ? res() : rej(new Error('timed out loading ' + u))), 20000);
+    el.onload = () => { clearTimeout(to); res(); };
+    el.onerror = () => { clearTimeout(to); (css ? res() : rej(new Error('could not load ' + u))); };
     document.head.appendChild(el);
   })));
+  _assets[key].catch(() => { delete _assets[key]; }); // let a failed load be retried
   return _assets[key];
 }
 async function ensureMdLibs() {
