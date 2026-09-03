@@ -257,7 +257,7 @@ function initEditor() {
       'Cmd-S': () => saveFile(),
       'Ctrl-B': () => build(),
       'Cmd-B': () => build(),
-      'Ctrl-Space': (ed) => ed.showHint({ hint: latexHint, completeSingle: false }),
+      'Ctrl-Space': (ed) => ed.showHint({ hint: latexHint, completeSingle: false, container: $('#app') }),
       Tab: (ed) => (ed.somethingSelected() ? ed.indentSelection('add') : ed.replaceSelection('  ')),
       'Shift-Tab': (ed) => ed.indentSelection('subtract'),
       Home: 'goLineStartSmartDA',

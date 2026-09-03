@@ -42,6 +42,7 @@ body {
   height: 100vh;
   background: var(--bg);
   color: var(--fg);
+  position: relative; /* positioning context for the completion popup */
 }
 
 /* ---- toolbar --------------------------------------------------------------- */
@@ -349,10 +350,22 @@ body {
 .cm-s-material-darker .cm-def       { color: #7dcfff; }
 .cm-s-material-darker .cm-error     { color: #f7768e; }
 
-/* hint popup follows the theme */
+/* completion popup (Ctrl+Space) — explicit, readable colours in both themes.
+   The popup is appended inside #app, so #app[data-theme="dark"] scopes work. */
 .CodeMirror-hints {
-  background: var(--bg-2); border: 1px solid var(--border);
-  color: var(--fg); font-family: inherit; z-index: 40;
+  background: #ffffff; color: #1f2328;
+  border: 1px solid #c9ccd1; border-radius: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .18);
+  font-family: inherit; font-size: 13px; z-index: 40; padding: 3px;
 }
-.CodeMirror-hint { color: var(--fg); }
-li.CodeMirror-hint-active { background: var(--accent); color: var(--accent-fg); }
+.CodeMirror-hint { color: #1f2328; padding: 2px 8px; border-radius: 4px; }
+.CodeMirror-hint:hover { background: #e9edf2; }
+li.CodeMirror-hint-active { background: #1f6feb; color: #ffffff; }
+
+#app[data-theme="dark"] .CodeMirror-hints {
+  background: #23262d; color: #e6e8ec;
+  border-color: #3a3f4b; box-shadow: 0 6px 20px rgba(0, 0, 0, .5);
+}
+#app[data-theme="dark"] .CodeMirror-hint { color: #e6e8ec; }
+#app[data-theme="dark"] .CodeMirror-hint:hover { background: #2f333d; }
+#app[data-theme="dark"] li.CodeMirror-hint-active { background: #3b6fd4; color: #ffffff; }
