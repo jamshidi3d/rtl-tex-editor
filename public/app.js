@@ -63,8 +63,12 @@ const lst = (a) => a[a.length - 1];
 const bidiOrder = (function () {
   const lowTypes = 'bbbbbbbbbtstwsbbbbbbbbbbbbbbssstwNN%%%NNNNNN,N,N1111111111NNNNNNNLLLLLLLLLLLLLLLLLLLLLLLLLLNNNNNNLLLLLLLLLLLLLLLLLLLLLLLLLLNNNNbbbbbbsbbbbbbbbbbbbbbbbbbbbbbbbbb,N%%%%NNNNLNNNNN%%11NLNNN1LNNNNNLLLLLLLLLLLLLLLLLLLLLLLNLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLN';
   const arabicTypes = 'nnnnnnNNr%%r,rNNmmmmmmmmmmmrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrmmmmmmmmmmmmmmmmmmmmmnnnnnnnnnn%nnrrrmrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrmmmmmmmnNmmmmmmrrmmNmmmmrr1111111111';
+  // TeX syntax characters ( \ { } $ [ ] & # ^ _ ~ ) are markup, never prose
+  // punctuation — force them strong-LTR so they don't mirror or reorder inside
+  // RTL text (a "{" must not flip to "}", "$x$" must read left-to-right).
+  const texL = new Set([0x5c, 0x7b, 0x7d, 0x24, 0x5b, 0x5d, 0x26, 0x23, 0x5e, 0x5f, 0x7e]);
   function charType(code) {
-    if (code === 0x5c) return 'L'; // treat "\" as strong-LTR so \command stays with its letters
+    if (texL.has(code)) return 'L';
     if (code <= 0xf7) return lowTypes.charAt(code);
     if (code >= 0x590 && code <= 0x5f4) return 'R';
     if (code >= 0x600 && code <= 0x6f9) return arabicTypes.charAt(code - 0x600);
