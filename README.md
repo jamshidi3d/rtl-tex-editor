@@ -47,7 +47,7 @@ switch below).
 | Open a file | click it in the tree (left) |
 | Change workspace folder | 📁 in the tree header (or click the folder name) → browse / paste a path / pick a recent one. Disabled with `--lock-root`. |
 | Save | `Ctrl/Cmd+S` (💾) — conflict-checked against disk mtime |
-| Build | **Build ▶** or `Ctrl/Cmd+B`; **auto** rebuilds ~0.6 s after each save |
+| Build | **Build ▶** or `Ctrl/Cmd+B` — saves the open file first, then runs `latexmk` |
 | Pick the main `.tex` | the **main** dropdown, or the *main* badge on a `.tex` row (defaults to `PhDThesis.tex`) |
 | Editor left / right of the PDF | **⇄ sides** |
 | Light / dark | **☾ / ☀** |

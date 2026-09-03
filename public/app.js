@@ -272,7 +272,7 @@ function initEditor() {
   cm.on('renderLine', (ed, lh) => pinOrder(lh, lh.text));
   applyDir();
   markAllCmdLines();
-  cm.on('change', () => { setDirty(isDirty()); scheduleAutobuild(); });
+  cm.on('change', () => { setDirty(isDirty()); });
   cm.on('changes', (ed, changes) => {
     let lo = Infinity;
     let hi = -1;
@@ -360,19 +360,13 @@ async function saveFile(force) {
   curf.saved = text;
   setDirty(false);
   status200flash('saved');
-  if ($('#autobuild').checked) build();
 }
 
 // ------------------------------------------------------------------ build
-let buildTimer = null;
-function scheduleAutobuild() {
-  if (!$('#autobuild').checked) return;
-  clearTimeout(buildTimer);
-  buildTimer = setTimeout(() => { if (curf.path) saveFile().then(build); }, 600);
-}
 async function build() {
   const main = $('#mainFile').value;
   if (!main) { setStatus('pick a main .tex', 'err'); return; }
+  if (curf.path && isDirty()) await saveFile();
   const btn = $('#build');
   btn.disabled = true;
   setStatus('building…');
@@ -593,7 +587,6 @@ $('#build').addEventListener('click', build);
 $('#saveBtn').addEventListener('click', () => saveFile());
 $('#refreshTree').addEventListener('click', loadTree);
 $('#showAux').addEventListener('change', (e) => { LS.set('showAux', e.target.checked); renderTree(); });
-$('#autobuild').addEventListener('change', (e) => LS.set('autobuild', e.target.checked));
 
 $('#theme').addEventListener('click', () => {
   const next = app.dataset.theme === 'dark' ? 'light' : 'dark';
@@ -726,7 +719,6 @@ function restoreLayout() {
   let dm = LS.get('dir', 'auto');
   if (!['rtl', 'auto', 'ltr'].includes(dm)) { dm = 'auto'; LS.set('dir', dm); }
   $('#dirBtn').textContent = 'dir: ' + dm;
-  $('#autobuild').checked = LS.get('autobuild', false);
   $('#showAux').checked = LS.get('showAux', false);
   $('#workbench').style.setProperty('--sidebar-w', LS.get('sidebarW', 260) + 'px');
   const ef = LS.get('edFlex', 0.5);
