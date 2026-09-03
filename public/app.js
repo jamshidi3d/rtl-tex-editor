@@ -657,6 +657,20 @@ function fitPdf(tries) {
   if (w > 20) { try { pdfViewer.currentScaleValue = 'page-width'; } catch (e) { /* ignore */ } return; }
   if ((tries || 0) < 30) requestAnimationFrame(() => fitPdf((tries || 0) + 1));
 }
+// pdf.js renders visible pages only on scroll / update(). After a fresh
+// setDocument the first paint sometimes doesn't happen until something nudges
+// it — so fit, update(), and jiggle the scroll a few times over ~1s.
+function kickPdfRender() {
+  const doc = $('#pdfDoc');
+  [0, 60, 200, 500, 1000].forEach((ms) => setTimeout(() => {
+    if (!pdfViewer || !pdfViewer.pdfDocument) return;
+    fitPdf(0);
+    try { pdfViewer.update(); } catch (e) { /* ignore */ }
+    const y = doc.scrollTop;
+    doc.scrollTop = y + 1;
+    doc.scrollTop = y;
+  }, ms));
+}
 function initPdfViewer() {
   if (pdfViewer) return;
   pdfEventBus = new window.pdfjsViewer.EventBus();
@@ -673,18 +687,23 @@ function initPdfViewer() {
     annotationEditorMode: -1,
   });
   pdfLinkService.setViewer(pdfViewer);
-  pdfEventBus.on('pagesinit', () => { fitPdf(0); restorePdfScroll(); });
-  pdfEventBus.on('pagesloaded', () => { fitPdf(0); try { pdfViewer.update(); } catch (e) { /* ignore */ } });
+  pdfEventBus.on('pagesinit', () => { plog('pagesinit w=' + $('#pdfDoc').clientWidth); fitPdf(0); restorePdfScroll(); });
+  pdfEventBus.on('pagesloaded', (e) => { plog('pagesloaded n=' + (e && e.pagesCount) + ' scale=' + pdfViewer.currentScale); fitPdf(0); try { pdfViewer.update(); } catch (x) { /* ignore */ } });
+  pdfEventBus.on('pagerendered', (e) => plog('pagerendered p=' + (e && e.pageNumber)));
   pdfFitRO = new ResizeObserver(debounce(() => fitPdf(0), 120));
   pdfFitRO.observe($('#pdfDoc'));
   $('#pdfDoc').addEventListener('click', onPdfClick);
   try { pdfViewer.setDocument(null); } catch (e) { /* prime */ }
 }
+function plog(m) { try { console.log('[pdf] ' + m); } catch (e) { /* ignore */ } }
 async function loadPdf(url) {
   const seq = ++pdfSeq;
+  plog('loadPdf seq=' + seq);
   await ensurePdfLibs();
-  if (seq !== pdfSeq) return;
+  plog('libs ready; seq ' + seq + '/' + pdfSeq + ' pdfjsLib=' + (typeof window.pdfjsLib) + ' pdfjsViewer=' + (typeof window.pdfjsViewer));
+  if (seq !== pdfSeq) { plog('superseded after libs'); return; }
   initPdfViewer();
+  plog('viewer ' + (pdfViewer ? 'ok' : 'MISSING') + ' #pdfDoc w=' + $('#pdfDoc').clientWidth + ' h=' + $('#pdfDoc').clientHeight);
   const keepPage = pdfLoaded ? pdfViewer.currentPageNumber : 0;
   const old = pdfDocObj;
   pdfDocObj = null; pdfLoaded = false;
@@ -696,24 +715,23 @@ async function loadPdf(url) {
   let doc;
   try {
     doc = await window.pdfjsLib.getDocument({ url }).promise;
+    plog('getDocument ok pages=' + doc.numPages);
   } catch (e) {
+    plog('getDocument FAIL ' + e.message);
     if (seq === pdfSeq) throw e;
     return;
   }
   if (seq !== pdfSeq) { try { await doc.destroy(); } catch (e) { /* ignore */ } return; }
-  // pdf.js computes the 'page-width' scale from container.clientWidth; if the
-  // pane isn't laid out yet the scale is 0 and pages render invisibly (the
-  // "only shows on the second build" symptom).
   await waitForWidth($('#pdfDoc'), 3000);
   if (seq !== pdfSeq) { try { await doc.destroy(); } catch (e) { /* ignore */ } return; }
   _pdfKeep = keepPage ? { page: keepPage } : null;
   pdfDocObj = doc;
+  plog('setDocument; #pdfDoc w=' + $('#pdfDoc').clientWidth);
   pdfViewer.setDocument(doc);
   pdfLinkService.setDocument(doc, null);
   pdfLoaded = true;
   pdfUrl = url;
-  fitPdf(0);
-  setTimeout(() => fitPdf(0), 200);
+  kickPdfRender();
 }
 function restorePdfScroll() {
   if (_pdfKeep && _pdfKeep.page && _pdfKeep.page <= pdfViewer.pagesCount) {
