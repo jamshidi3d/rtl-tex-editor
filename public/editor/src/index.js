@@ -179,7 +179,21 @@ const isoMark = Decoration.mark({
   attributes: { dir: 'ltr' },
   bidiIsolate: Direction.LTR,
 });
-const ISO_RE = /\\[a-zA-Z@]+(?:\s*\{[^{}]*\})*|\$\$[^$]*\$\$|\$[^$\n]+\$|\{[^{}]*\}/g;
+// Brace groups nest in real LaTeX (`\footnote{\lr{pre-inflationary}}`,
+// `\section{\textbf{x}}`) — a command whose argument itself contains a nested
+// command must isolate as ONE run, or the outer braces are left un-isolated
+// and the two inner isolates (command vs. nested command) can be reordered
+// relative to each other by the browser's bidi pass. JS regex can't recurse,
+// so nesting is unrolled by hand, four levels deep (comfortably past anything
+// that shows up in this manuscript).
+const BRACE0 = '\\{[^{}]*\\}';
+const BRACE1 = `\\{(?:[^{}]|${BRACE0})*\\}`;
+const BRACE2 = `\\{(?:[^{}]|${BRACE1})*\\}`;
+const BRACE = `\\{(?:[^{}]|${BRACE2})*\\}`;
+const ISO_RE = new RegExp(
+  `\\\\[a-zA-Z@]+(?:\\s*(?:${BRACE}))*|\\$\\$[^$]*\\$\\$|\\$[^$\\n]+\\$|${BRACE}`,
+  'g',
+);
 
 function isolatePlugin(lineIsRtl) {
   return ViewPlugin.fromClass(class {
