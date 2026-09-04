@@ -39,12 +39,22 @@ Requires **Node ≥ 18** (runtime only — no `npm install` to run the tool) and
 | macOS | `brew install node` — or the installer from [nodejs.org](https://nodejs.org) | `node --version` |
 | Linux | distro package if it ships ≥ 18 (`sudo apt install nodejs`, `sudo dnf install nodejs`, `sudo pacman -S nodejs`); otherwise [nodesource](https://github.com/nodesource/distributions) or [`nvm`](https://github.com/nvm-sh/nvm) (`nvm install --lts`) | `node --version` |
 
+### The workspace root
+
+Every entry point takes an optional **root** — the one folder the editor reads,
+writes, builds, and shows in its file tree. `latexmk -shell-escape` runs inside
+it and nothing outside it is touched, so point it at a project you trust. It is
+the **first argument** to `rtl-tex-editor.bat` / `.sh` (or `--root` for `node`);
+with no argument the launchers use the folder they sit in, and `node` uses the
+current directory. You can also switch it later from the UI. An optional
+**second argument** overrides the port (default 5199).
+
 ### Windows — `rtl-tex-editor.bat`
 
 ```bat
-rtl-tex-editor.bat                       ::  root = parent folder of the script
-rtl-tex-editor.bat  D:\papers\draft      ::  root = that folder
-rtl-tex-editor.bat  D:\papers\draft 5200 ::  ... on port 5200
+rtl-tex-editor.bat
+rtl-tex-editor.bat  D:\papers\draft
+rtl-tex-editor.bat  D:\papers\draft 5200
 ```
 
 Starts the server in its own window and opens the URL in your default browser.
@@ -53,8 +63,8 @@ You can also **drag a folder onto the .bat**.
 ### Linux / macOS — `rtl-tex-editor.sh`
 
 ```sh
-./rtl-tex-editor.sh                    #  root = parent folder of the script
-./rtl-tex-editor.sh  ~/papers/draft    #  root = that folder
+./rtl-tex-editor.sh
+./rtl-tex-editor.sh  ~/papers/draft
 ./rtl-tex-editor.sh  ~/papers/draft 5200
 ```
 
@@ -71,9 +81,9 @@ node rtl-tex-editor/server.js --root . --engine xelatex
 #   then open http://127.0.0.1:5199
 ```
 
-Flags: `--root <dir>` (workspace, default = cwd) · `--port <n>` (default 5199) ·
-`--engine xelatex|pdflatex|lualatex` · `--lock-root` (disable the in-UI folder
-switch below).
+Flags: `--root <dir>` (the workspace root, above; default = current dir) ·
+`--port <n>` (default 5199) · `--engine xelatex|pdflatex|lualatex` ·
+`--lock-root` (disable the in-UI folder switch below).
 
 ---
 
