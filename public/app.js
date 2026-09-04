@@ -874,8 +874,7 @@ function populateMainSelect() {
   const saved = LS.get('main', '');
   sel.innerHTML = '<option value="">—</option>' + texs.map((p) => `<option value="${p}">${p}</option>`).join('');
   const pick = saved && texs.includes(saved) ? saved
-    : texs.find((p) => /(^|\/)PhDThesis\.tex$/i.test(p))
-    || texs.find((p) => /main\.tex$/i.test(p)) || texs[0] || '';
+    : texs.find((p) => /(^|\/)(main|thesis)\.tex$/i.test(p)) || texs[0] || '';
   sel.value = pick;
   LS.set('main', pick);
 }

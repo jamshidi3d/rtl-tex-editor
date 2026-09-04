@@ -9,8 +9,8 @@ works*.
 ## 1. What it is
 
 A **local, single-purpose editor** for a mixed right-to-left / left-to-right
-LaTeX manuscript — a Persian PhD thesis built with XeLaTeX + `xepersian`. It is
-two pieces:
+LaTeX manuscript — e.g. a Persian document built with XeLaTeX + `xepersian`. It
+is two pieces:
 
 - **`server.js`** — a zero-dependency Node ≥ 18 host. File I/O under a chosen
   workspace root, `latexmk` builds, and SyncTeX parsing. Binds `127.0.0.1` only.
@@ -21,17 +21,40 @@ two pieces:
 They talk over `/api/*` (JSON + a couple of streaming routes). There is no build
 step for the app itself; the only build is the CodeMirror bundle (§8).
 
-```
-  browser (public/)                         host (server.js)
-  ┌───────────────────────────┐             ┌────────────────────────────┐
-  │ index.html                │  GET /      │ static file server         │
-  │  ├─ editor/cm6.bundle.js   │◀───────────▶│  (serves public/)          │
-  │  └─ app.js  ──────────────────  /api/*  ─▶  file read/write           │
-  │       ├─ CodeMirror 6 view │             │  latexmk compile           │
-  │       ├─ pdf.js preview    │             │  .synctex.gz parse         │
-  │       └─ marked/KaTeX md   │             │  folder browse / tree      │
-  └───────────────────────────┘             └────────────────────────────┘
-        pdf.js / marked / KaTeX / mermaid  ← lazy-loaded from cdnjs on demand
+```mermaid
+flowchart LR
+    subgraph browser["browser &mdash; public/"]
+        direction TB
+        html["index.html"]
+        bundle["editor/cm6.bundle.js"]
+        app["app.js"]
+        cm["CodeMirror 6 view"]
+        pdfjs["pdf.js preview"]
+        mdview["marked / KaTeX md"]
+        html --> bundle
+        html --> app
+        app --> cm
+        app --> pdfjs
+        app --> mdview
+    end
+
+    subgraph host["host &mdash; server.js"]
+        direction TB
+        static["static file server<br/>(serves public/)"]
+        io["file read / write"]
+        compile["latexmk compile"]
+        synctex[".synctex.gz parse"]
+        tree["folder browse / tree"]
+    end
+
+    cdn["pdf.js &middot; marked &middot; KaTeX &middot; mermaid"]
+
+    html <-- "GET /" --> static
+    app -- "/api/*" --> io
+    app -- "/api/*" --> compile
+    app -- "/api/*" --> synctex
+    app -- "/api/*" --> tree
+    cdn -. "lazy-loaded from cdnjs on demand" .-> app
 ```
 
 ---
@@ -138,7 +161,7 @@ you trust.
    stores `ed` + `view`, wires the pane tweens and scroll-stop listeners.
 4. `GET /api/health` → `latexmk` status in the toolbar; `syncCap.synctex`.
 5. `loadTree()` → render the file tree, populate the **main** `.tex` dropdown
-   (defaults to `PhDThesis.tex`).
+   (guesses `main.tex` / `thesis.tex`, else the first `.tex` in the tree).
 6. Reopen `rwe.lastFile` if set; scan the first `references.bib` for `\cite`
    keys.
 

@@ -71,9 +71,9 @@ switch below).
 ## Use
 
 **First run.** Point the launcher (or `--root`) at the folder that holds your
-thesis. Pick the main `.tex` in the **main** dropdown (it guesses `PhDThesis.tex`
-/ `main.tex`). Click a file in the tree to open it, hit **Build ▶**, and the PDF
-appears on the right.
+project. Pick the root `.tex` in the **main** dropdown (it guesses a `main.tex` /
+`thesis.tex`, otherwise the first `.tex` it finds). Click a file in the tree to
+open it, hit **Build ▶**, and the PDF appears on the right.
 
 ### Editing mixed RTL / LTR text
 
@@ -107,7 +107,7 @@ The **dir:** button cycles three modes (remembered):
 |---|---|
 | Open a file | click it in the tree (left) |
 | Change workspace folder | 📁 in the tree header (or click the folder name) → browse / paste a path / pick a recent one. Disabled with `--lock-root`. |
-| Pick the main `.tex` | the **main** dropdown, or the *main* badge on a `.tex` row (defaults to `PhDThesis.tex`) |
+| Pick the main `.tex` | the **main** dropdown, or the *main* badge on a `.tex` row (guesses `main.tex` / `thesis.tex`, else the first `.tex`) |
 | Show `.aux` / log files | tick **aux** in the tree header |
 | Editor left / right of the PDF | **⇄ sides** |
 | Light / dark | **☾ / ☀** |
