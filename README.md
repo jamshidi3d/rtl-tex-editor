@@ -125,7 +125,8 @@ The **dir:** button cycles three modes (remembered):
 | Action | How |
 |---|---|
 | Open a file | click it in the tree (left) |
-| New file / folder, duplicate, delete | right-click a row (or empty space in the tree, for the workspace root) |
+| New file / folder | right-click a folder (or empty space in the tree, for the workspace root) |
+| Rename, duplicate, delete | right-click a file or folder |
 | Change workspace folder | 📁 in the tree header (or click the folder name) → browse / paste a path / pick a recent one. Disabled with `--lock-root`. |
 | Pick the main `.tex` | the **main** dropdown, or the *main* badge on a `.tex` row (guesses `main.tex` / `thesis.tex`, else the first `.tex`) |
 | Show `.aux` / log files | tick **aux** in the tree header |

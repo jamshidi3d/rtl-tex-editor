@@ -459,6 +459,25 @@ async function api(req, res, pathname, query) {
       }
       return json(res, 200, { ok: true, path: relOf(abs) });
     }
+    if (req.method === 'PUT') {
+      const abs = safeResolve(query.path);
+      if (abs === ROOT) return json(res, 400, { error: 'cannot rename the workspace root' });
+      const { to } = JSON.parse((await readBody(req)).toString() || '{}');
+      if (!to) return json(res, 400, { error: 'no destination given' });
+      const toAbs = safeResolve(to);
+      if (toAbs === ROOT) return json(res, 400, { error: 'cannot overwrite the workspace root' });
+      // block landing on an existing different entry; allow a case-only rename
+      // (same inode) on case-insensitive filesystems.
+      try {
+        const [fromSt, toSt] = await Promise.all([fsp.stat(abs), fsp.stat(toAbs)]);
+        if (!(fromSt.dev === toSt.dev && fromSt.ino === toSt.ino)) {
+          return json(res, 409, { error: '"' + to + '" already exists' });
+        }
+      } catch {}
+      await fsp.mkdir(path.dirname(toAbs), { recursive: true });
+      await fsp.rename(abs, toAbs);
+      return json(res, 200, { ok: true, path: relOf(toAbs) });
+    }
     if (req.method === 'DELETE') {
       const abs = safeResolve(query.path);
       if (abs === ROOT) return json(res, 400, { error: 'cannot delete the workspace root' });

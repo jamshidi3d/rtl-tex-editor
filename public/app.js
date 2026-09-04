@@ -879,11 +879,15 @@ function ctxItem(label, fn, danger) {
 }
 function openCtxMenu(x, y, entry) {
   ctxMenu.innerHTML = '';
-  const dir = entry ? (entry.type === 'dir' ? entry.path : dirName(entry.path)) : '';
-  ctxMenu.append(ctxItem('New file', () => createEntry(dir, 'file')));
-  ctxMenu.append(ctxItem('New folder', () => createEntry(dir, 'dir')));
+  const isDirTarget = !entry || entry.type === 'dir';
+  if (isDirTarget) {
+    const dir = entry ? entry.path : '';
+    ctxMenu.append(ctxItem('New file', () => createEntry(dir, 'file')));
+    ctxMenu.append(ctxItem('New folder', () => createEntry(dir, 'dir')));
+  }
   if (entry) {
-    ctxMenu.append(document.createElement('hr'));
+    if (isDirTarget) ctxMenu.append(document.createElement('hr'));
+    ctxMenu.append(ctxItem('Rename', () => renameEntry(entry)));
     ctxMenu.append(ctxItem('Duplicate', () => duplicateEntry(entry)));
     ctxMenu.append(ctxItem('Delete', () => deleteEntry(entry), true));
   }
@@ -915,6 +919,30 @@ async function createEntry(dir, type) {
   if (dir) { expanded.add(dir); LS.set('expanded', [...expanded]); }
   await loadTree();
   if (type === 'file') openFile(p).catch((e) => alert(e.message));
+}
+async function renameEntry(entry) {
+  const dir = dirName(entry.path);
+  const oldName = baseName(entry.path);
+  const name = prompt('Rename "' + oldName + '" to:', oldName);
+  if (!name || !name.trim() || name.trim() === oldName) return;
+  const to = joinRel(dir, name.trim());
+  try {
+    await api('/api/entry?path=' + encodeURIComponent(entry.path), Object.assign({ method: 'PUT', body: JSON.stringify({ to }) }, jsonHeaders));
+  } catch (e) { alert(e.message); return; }
+  if (curf.path === entry.path) {
+    curf.path = to;
+    LS.set('lastFile', to);
+    $('#fileName').textContent = to;
+  } else if (entry.type === 'dir' && curf.path && curf.path.startsWith(entry.path + '/')) {
+    curf.path = to + curf.path.slice(entry.path.length);
+    LS.set('lastFile', curf.path);
+    $('#fileName').textContent = curf.path;
+  }
+  if (expanded.has(entry.path)) { expanded.delete(entry.path); expanded.add(to); }
+  if (dir) expanded.add(dir);
+  LS.set('expanded', [...expanded]);
+  await loadTree();
+  if (curf.path) markActiveInTree(curf.path);
 }
 async function duplicateEntry(entry) {
   const dir = dirName(entry.path);
