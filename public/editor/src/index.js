@@ -22,6 +22,7 @@ import {
 } from '@codemirror/view';
 import {
   defaultKeymap, history, historyKeymap, indentMore, indentLess,
+  cursorLineStart, cursorLineEnd, selectLineStart, selectLineEnd,
 } from '@codemirror/commands';
 import {
   StreamLanguage, HighlightStyle, syntaxHighlighting,
@@ -346,6 +347,13 @@ export function create(opts) {
       },
     },
     { key: 'Shift-Tab', preventDefault: true, run: indentLess },
+    // Default Home/End (`cursorLineBoundaryBackward/Forward`) find the line edge
+    // by hunting for screen coordinates, which the source itself documents as
+    // unreliable for "text going against the main dir at the end of the line" —
+    // exactly a Persian line ending in an isolated \command or $math$. Bind them
+    // to the logical line start/end instead: always correct, direction-agnostic.
+    { key: 'Home', preventDefault: true, run: cursorLineStart, shift: selectLineStart },
+    { key: 'End', preventDefault: true, run: cursorLineEnd, shift: selectLineEnd },
   ]));
 
   const extensions = [
