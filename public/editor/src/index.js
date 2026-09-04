@@ -76,15 +76,44 @@ const rweTheme = EditorView.theme({
   // so they inherit #app[data-theme]; colours come straight from the app vars.
   '.cm-panels': { backgroundColor: 'var(--bg-2)', color: 'var(--fg)', borderColor: 'var(--border)' },
   '.cm-panels.cm-panels-top': { borderBottom: '1px solid var(--border)' },
+  // find / replace panel. CM6's base theme gives its buttons a pale gradient
+  // and `color: inherit`, so in the dark app theme the label text goes white on
+  // near-white — unreadable. Restyle every control from the app vars.
+  '.cm-panel.cm-search': { padding: '6px 8px', fontFamily: 'var(--ui-font)' },
   '.cm-panel.cm-search input, .cm-panel.cm-search button, .cm-panel.cm-search label': {
     fontFamily: 'var(--ui-font)', fontSize: '12px',
   },
-  '.cm-panel.cm-search input': {
+  '.cm-panel.cm-search label': { color: 'var(--fg)' },
+  '.cm-panel.cm-search .cm-textfield': {
     background: 'var(--bg)', color: 'var(--fg)', border: '1px solid var(--border)',
-    borderRadius: '4px', padding: '2px 6px',
+    borderRadius: '4px', padding: '3px 6px',
   },
-  '.cm-searchMatch': { backgroundColor: 'color-mix(in srgb, var(--accent) 28%, transparent)' },
-  '.cm-searchMatch-selected': { backgroundColor: 'color-mix(in srgb, var(--accent) 55%, transparent)' },
+  '.cm-panel.cm-search .cm-textfield:focus-visible, .cm-panel.cm-search .cm-textfield:focus': {
+    outline: 'none', borderColor: 'var(--accent)',
+  },
+  '.cm-panel.cm-search .cm-button': {
+    backgroundImage: 'none', background: 'var(--bg-3)', color: 'var(--fg)',
+    border: '1px solid var(--border)', borderRadius: '4px',
+    padding: '3px 10px', cursor: 'pointer',
+  },
+  '.cm-panel.cm-search .cm-button:hover': { background: 'var(--bg-2)', borderColor: 'var(--accent)' },
+  '.cm-panel.cm-search .cm-button:active': {
+    backgroundImage: 'none', background: 'var(--accent)', color: 'var(--accent-fg)',
+  },
+  '.cm-panel.cm-search [name=close]': {
+    color: 'var(--fg-dim)', fontSize: '18px', lineHeight: '1',
+    padding: '0 6px', cursor: 'pointer', top: '2px',
+  },
+  '.cm-panel.cm-search [name=close]:hover': { color: 'var(--fg)', background: 'transparent' },
+  '.cm-searchMatch': {
+    backgroundColor: 'color-mix(in srgb, var(--accent) 22%, transparent)',
+    outline: '1px solid color-mix(in srgb, var(--accent) 45%, transparent)',
+    borderRadius: '2px',
+  },
+  '.cm-searchMatch.cm-searchMatch-selected, .cm-searchMatch-selected': {
+    backgroundColor: 'color-mix(in srgb, var(--accent) 55%, transparent)',
+    color: 'var(--fg)',
+  },
   '.cm-tooltip': {
     backgroundColor: 'var(--bg-2)', color: 'var(--fg)',
     border: '1px solid var(--border)', borderRadius: '6px',
