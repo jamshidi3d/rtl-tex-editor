@@ -28,7 +28,16 @@ CodeMirror 6 wiring, every `/api/*` route, the SyncTeX maths — are in
 
 ## Run
 
-Requires **Node ≥ 18** and **TeX Live** (`latexmk` on `PATH`).
+Requires **Node ≥ 18** (runtime only — no `npm install` to run the tool) and a
+**TeX distribution** with `latexmk` on `PATH` (TeX Live, MiKTeX, or MacTeX).
+
+### Installing Node
+
+| Platform | Quickest way | Check |
+|---|---|---|
+| Windows | `winget install OpenJS.NodeJS.LTS` — or the installer from [nodejs.org](https://nodejs.org) | `node --version` |
+| macOS | `brew install node` — or the installer from [nodejs.org](https://nodejs.org) | `node --version` |
+| Linux | distro package if it ships ≥ 18 (`sudo apt install nodejs`, `sudo dnf install nodejs`, `sudo pacman -S nodejs`); otherwise [nodesource](https://github.com/nodesource/distributions) or [`nvm`](https://github.com/nvm-sh/nvm) (`nvm install --lts`) | `node --version` |
 
 ### Windows — `rtl-tex-editor.bat`
 
