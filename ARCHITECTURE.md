@@ -268,6 +268,10 @@ ed.refresh()            // view.requestMeasure()  (after a resize)
   `Tab`→`indentMore` (selection) / insert two spaces (no selection),
   `Shift-Tab`→`indentLess`; then `defaultKeymap`, `historyKeymap`,
   `closeBracketsKeymap`, `completionKeymap`, `searchKeymap`.
+- **Swallowed chords** — a capture-phase `keydown` listener on `view.dom`
+  `preventDefault`s `Ctrl+Shift+Digit2` while the editor has focus, so the
+  browser can't turn a Persian typist's "switch to input language 2" hotkey into
+  a new/next tab. Extend `SWALLOW_CODES` for other language slots.
 
 ---
 
