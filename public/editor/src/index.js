@@ -368,16 +368,18 @@ export function create(opts) {
   const mkState = (text) => EditorState.create({ doc: text, extensions });
   const view = new EditorView({ state: mkState(doc), parent });
 
-  // Windows assigns Ctrl+Shift+<digit> to "switch to input language N" (a
-  // Persian typist reaches for Ctrl+Shift+2 mid-line). Some browsers claim that
-  // chord first and open / jump tabs instead. While the editor holds focus,
-  // swallow it so it never reaches the browser. Add more `Digit`s here if other
-  // language slots are in use.
-  const SWALLOW_CODES = new Set(['Digit2']);
+  // Ctrl+Shift+2 on a Persian layout is meant to type a character, but some
+  // browsers claim that chord first (opening / switching a tab) AND swallow the
+  // character. While the editor is focused, cancel the browser's action and
+  // insert the character the layout produced (`e.key`, when it's one printable
+  // char) ourselves. Add more `Digit`s if other slots collide the same way.
+  const RECLAIM_CODES = new Set(['Digit2']);
   view.dom.addEventListener('keydown', (e) => {
-    if (e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey && SWALLOW_CODES.has(e.code)) {
-      e.preventDefault();
-      e.stopPropagation();
+    if (!(e.ctrlKey && e.shiftKey && !e.altKey && !e.metaKey && RECLAIM_CODES.has(e.code))) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.key && e.key.length === 1) {
+      view.dispatch(view.state.replaceSelection(e.key), { scrollIntoView: true, userEvent: 'input.type' });
     }
   }, true);
 
