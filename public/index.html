@@ -93,6 +93,20 @@
       <button id="dlgOpen" class="btn primary">Open this folder</button>
     </div>
   </dialog>
+
+  <dialog id="mainDlg" class="dlg">
+    <div class="dlg-head">
+      <span>Select the master (root) .tex file</span>
+      <button id="mainDlgX" class="icon" title="close">✕</button>
+    </div>
+    <p class="dlg-hint">This is the file <code>latexmk</code> compiles — the one with
+      <code>\documentclass</code> and <code>\begin{document}</code>. Sub-files pulled in
+      via <code>\input</code>/<code>\include</code> are not buildable on their own.</p>
+    <ul id="mainDlgList" class="dlg-list"></ul>
+    <div class="dlg-foot">
+      <button id="mainDlgCancel" class="btn">Keep current</button>
+    </div>
+  </dialog>
 </div>
 
 <script src="editor/cm6.bundle.js"></script>

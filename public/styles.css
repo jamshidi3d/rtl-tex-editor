@@ -250,8 +250,16 @@ body {
 .tree .ext-bib .name, .tree .ext-md .name { font-style: italic; }
 .tree li.dir > ul { display: none; padding-left: 12px; }
 .tree li.dir.open > ul { display: block; }
-.tree .main-badge { font-size: 10px; color: var(--fg-dim); margin-left: auto; }
+/* "set main" is a hover-only action (it's a button, not a status); "main" on
+   the actual master file is always visible and reads as a status badge. */
+.tree .main-badge {
+  font-size: 10px; color: var(--fg-dim); margin-left: auto;
+  opacity: 0; padding: 1px 5px; border-radius: 999px; border: 1px solid transparent;
+}
+.tree .row:hover .main-badge, .tree .main-badge.is-main { opacity: 1; }
+.tree .main-badge.is-main { color: var(--accent); border-color: var(--accent); font-weight: 600; }
 .tree .row.active .main-badge { color: var(--accent-fg); }
+.tree .row.active .main-badge.is-main { border-color: var(--accent-fg); }
 
 /* ---- log bar --------------------------------------------------------------- */
 #logbar {
@@ -312,6 +320,11 @@ body {
 .dlg-item:hover { background: var(--bg-3); }
 .dlg-empty { padding: 6px 8px; color: var(--fg-dim); }
 .dlg-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 12px; }
+.dlg-hint {
+  margin: 0; padding: 0 12px 10px; color: var(--fg-dim); font-size: 12px; line-height: 1.5;
+}
+.dlg-item.guess { border: 1px solid var(--accent); }
+.dlg-item.guess::after { content: ' — detected root'; color: var(--fg-dim); font-size: 11px; }
 
 /* ---- CodeMirror 6 -------------------------------------------------------- */
 /* Colours, gutters, selection, active line, the search panel and the

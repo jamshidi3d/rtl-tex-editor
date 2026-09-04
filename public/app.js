@@ -791,6 +791,7 @@ function extClass(name) {
 }
 function renderTree() {
   const showAux = $('#showAux').checked;
+  const mainPath = LS.get('main', '');
   const root = document.createElement('ul');
   const walk = (nodes, parentUl) => {
     for (const n of nodes) {
@@ -810,10 +811,11 @@ function renderTree() {
       nm.textContent = n.name;
       row.append(tw, nm);
       if (n.type === 'file' && /\.tex$/i.test(n.name)) {
+        const isMain = n.path === mainPath;
         const b = document.createElement('span');
-        b.className = 'main-badge';
-        b.textContent = 'main';
-        b.title = 'set as main file';
+        b.className = 'main-badge' + (isMain ? ' is-main' : '');
+        b.textContent = isMain ? 'main' : 'set main';
+        b.title = isMain ? 'this is the master file' : 'set as master file';
         b.dataset.setmain = n.path;
         row.append(b);
       }
@@ -856,8 +858,8 @@ async function loadTree() {
   treeData = body.tree;
   $('#rootName').textContent = body.rootName;
   $('#rootName').title = body.root;
-  renderTree();
   populateMainSelect();
+  renderTree();
 }
 
 // ------------------------------------------------------------------ main file
@@ -873,8 +875,10 @@ function populateMainSelect() {
   const texs = flattenTex(treeData, []);
   const saved = LS.get('main', '');
   sel.innerHTML = '<option value="">—</option>' + texs.map((p) => `<option value="${p}">${p}</option>`).join('');
+  const rootTexs = texs.filter((p) => !p.includes('/'));
   const pick = saved && texs.includes(saved) ? saved
-    : texs.find((p) => /(^|\/)(main|thesis)\.tex$/i.test(p)) || texs[0] || '';
+    : texs.find((p) => /(^|\/)(main|thesis)\.tex$/i.test(p))
+    || rootTexs[0] || texs[0] || '';
   sel.value = pick;
   LS.set('main', pick);
 }
@@ -882,8 +886,47 @@ function setMain(p) {
   $('#mainFile').value = p;
   LS.set('main', p);
   status200flash('main → ' + p);
+  renderTree();
 }
-$('#mainFile').addEventListener('change', (e) => LS.set('main', e.target.value));
+$('#mainFile').addEventListener('change', (e) => { LS.set('main', e.target.value); renderTree(); });
+
+// Ask which .tex is the compile root right after a folder is opened, instead
+// of guessing by filename — a master named e.g. "PhDThesis.tex" doesn't match
+// a main|thesis.tex pattern, and a name-blind sub-file (no \documentclass) can
+// still sort first and get latexmk pointed at something that fails to build
+// on its own. The default highlighted here is content-based instead: whichever
+// candidate actually contains \documentclass.
+const mainDlg = $('#mainDlg');
+async function detectMaster(texs) {
+  const hits = await Promise.all(texs.map(async (p) => {
+    try {
+      const { body } = await api('/api/file?path=' + encodeURIComponent(p));
+      return /\\documentclass\b/.test(body.content) ? p : null;
+    } catch { return null; }
+  }));
+  return hits.find(Boolean) || null;
+}
+async function promptMainFile() {
+  const texs = flattenTex(treeData, []);
+  if (texs.length <= 1) return; // nothing to choose between
+  const detected = await detectMaster(texs);
+  const guess = detected || $('#mainFile').value;
+  const ul = $('#mainDlgList');
+  ul.innerHTML = '';
+  for (const p of texs) {
+    const li = document.createElement('li');
+    li.className = 'dlg-item' + (p === guess ? ' guess' : '');
+    li.textContent = '📄 ' + p;
+    li.title = p;
+    li.addEventListener('click', () => { setMain(p); mainDlg.close(); });
+    ul.append(li);
+  }
+  if (detected) setMain(detected);
+  if (typeof mainDlg.showModal === 'function') mainDlg.showModal();
+  else mainDlg.setAttribute('open', '');
+}
+$('#mainDlgX').addEventListener('click', () => mainDlg.close());
+$('#mainDlgCancel').addEventListener('click', () => mainDlg.close());
 
 function findFirst(nodes, re) {
   for (const n of nodes) {
@@ -1068,6 +1111,7 @@ async function chooseRoot(p) {
     const bib = findFirst(treeData, /references\.bib$/i) || findFirst(treeData, /\.bib$/i);
     if (bib) { try { refreshBibKeys((await api('/api/file?path=' + encodeURIComponent(bib))).body.content); } catch {} }
     status200flash('root → ' + body.rootName);
+    await promptMainFile();
   } catch (e) {
     alert('open folder: ' + e.message);
   }
