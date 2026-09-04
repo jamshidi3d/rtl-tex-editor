@@ -261,6 +261,23 @@ body {
 .tree .row.active .main-badge { color: var(--accent-fg); }
 .tree .row.active .main-badge.is-main { border-color: var(--accent-fg); }
 
+/* ---- tree context menu ------------------------------------------------------ */
+.ctx-menu {
+  position: fixed; z-index: 50; min-width: 170px;
+  background: var(--bg-2); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 4px; box-shadow: 0 10px 30px rgba(0, 0, 0, .35);
+  font: 13px var(--ui-font);
+}
+.ctx-menu button {
+  display: block; width: 100%; text-align: left; background: none; border: none;
+  color: inherit; font: inherit; padding: 6px 10px; border-radius: 5px; cursor: pointer;
+}
+.ctx-menu button:hover { background: var(--bg-3); }
+.ctx-menu button.danger { color: var(--danger); }
+.ctx-menu button.danger:hover { background: color-mix(in srgb, var(--danger) 18%, transparent); }
+.ctx-menu hr { border: 0; border-top: 1px solid var(--border); margin: 4px 2px; }
+
 /* ---- log bar --------------------------------------------------------------- */
 #logbar {
   background: var(--bg-2);

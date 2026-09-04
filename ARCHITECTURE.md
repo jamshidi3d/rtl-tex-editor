@@ -136,6 +136,9 @@ in-UI folder switcher. Everything is served from and written under `ROOT`;
 | `POST /api/root {path}` | switch `ROOT` at runtime (disabled by `--lock-root`) | `{root, rootName}` |
 | `GET /api/file?path` | read a file (UTF-8, ≤ 5 MB) | `{path, content, mtimeMs}` |
 | `PUT /api/file?path&mtime` | write; `mtime` ≠ `force` → 409 `{conflict:true, mtimeMs}` if disk is newer | `{ok, mtimeMs}` |
+| `POST /api/entry {path, type}` | create an empty file/folder (`type: 'file'\|'dir'`, parents auto-made); 409 if it exists | `{ok, path}` |
+| `DELETE /api/entry?path` | remove a file or folder (recursive); refuses `ROOT` itself | `{ok}` |
+| `POST /api/copy {from, to}` | duplicate a file or folder (recursive); 409 if `to` exists | `{ok, path}` |
 | `POST /api/compile {main}` | `latexmk -<engine> -synctex=1 -shell-escape -interaction=nonstopmode -halt-on-error -file-line-error`; retries once with `-g` if latexmk latched a stale failure | `{ok, code, log, pdf, durationMs}` |
 | `GET /api/pdf?path` | stream a built PDF (`no-store`) | pdf bytes |
 | `GET /api/synctex?main&file&line` | forward search (§9) | `{ok, page, line, h, v, W, H, D, unit, mag, xoff, yoff}` |

@@ -442,6 +442,48 @@ async function api(req, res, pathname, query) {
     return json(res, 405, { error: 'method' });
   }
 
+  if (pathname === '/api/entry') {
+    if (req.method === 'POST') {
+      const { path: p, type } = JSON.parse((await readBody(req)).toString() || '{}');
+      if (!p) return json(res, 400, { error: 'no path given' });
+      if (type !== 'file' && type !== 'dir') return json(res, 400, { error: 'type must be "file" or "dir"' });
+      const abs = safeResolve(p);
+      if (abs === ROOT) return json(res, 400, { error: 'cannot create the workspace root' });
+      await fsp.mkdir(path.dirname(abs), { recursive: true });
+      try {
+        if (type === 'dir') await fsp.mkdir(abs);
+        else await fsp.writeFile(abs, '', { flag: 'wx' });
+      } catch (e) {
+        if (e.code === 'EEXIST') return json(res, 409, { error: '"' + p + '" already exists' });
+        throw e;
+      }
+      return json(res, 200, { ok: true, path: relOf(abs) });
+    }
+    if (req.method === 'DELETE') {
+      const abs = safeResolve(query.path);
+      if (abs === ROOT) return json(res, 400, { error: 'cannot delete the workspace root' });
+      await fsp.rm(abs, { recursive: true });
+      return json(res, 200, { ok: true });
+    }
+    return json(res, 405, { error: 'method' });
+  }
+
+  if (pathname === '/api/copy' && req.method === 'POST') {
+    const { from, to } = JSON.parse((await readBody(req)).toString() || '{}');
+    if (!from || !to) return json(res, 400, { error: 'from and to are required' });
+    const fromAbs = safeResolve(from);
+    const toAbs = safeResolve(to);
+    if (toAbs === ROOT) return json(res, 400, { error: 'cannot overwrite the workspace root' });
+    await fsp.mkdir(path.dirname(toAbs), { recursive: true });
+    try {
+      await fsp.cp(fromAbs, toAbs, { recursive: true, force: false, errorOnExist: true });
+    } catch (e) {
+      if (e.code === 'ERR_FS_CP_EEXIST' || e.code === 'EEXIST') return json(res, 409, { error: '"' + to + '" already exists' });
+      throw e;
+    }
+    return json(res, 200, { ok: true, path: relOf(toAbs) });
+  }
+
   if (pathname === '/api/pdf' && req.method === 'GET') {
     const abs = safeResolve(query.path);
     if (!abs.toLowerCase().endsWith('.pdf')) return json(res, 400, { error: 'not a pdf' });

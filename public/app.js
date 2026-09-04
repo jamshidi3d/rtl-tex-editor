@@ -862,6 +862,91 @@ async function loadTree() {
   renderTree();
 }
 
+// ------------------------------------------------------------------ tree context menu
+const ctxMenu = $('#ctxMenu');
+const dirName = (p) => { const i = p.lastIndexOf('/'); return i < 0 ? '' : p.slice(0, i); };
+const baseName = (p) => { const i = p.lastIndexOf('/'); return i < 0 ? p : p.slice(i + 1); };
+const joinRel = (dir, name) => (dir ? dir + '/' + name : name);
+const jsonHeaders = { headers: { 'content-type': 'application/json' } };
+
+function closeCtxMenu() { ctxMenu.hidden = true; ctxMenu.innerHTML = ''; }
+function ctxItem(label, fn, danger) {
+  const b = document.createElement('button');
+  b.textContent = label;
+  if (danger) b.className = 'danger';
+  b.addEventListener('click', () => { closeCtxMenu(); fn(); });
+  return b;
+}
+function openCtxMenu(x, y, entry) {
+  ctxMenu.innerHTML = '';
+  const dir = entry ? (entry.type === 'dir' ? entry.path : dirName(entry.path)) : '';
+  ctxMenu.append(ctxItem('New file', () => createEntry(dir, 'file')));
+  ctxMenu.append(ctxItem('New folder', () => createEntry(dir, 'dir')));
+  if (entry) {
+    ctxMenu.append(document.createElement('hr'));
+    ctxMenu.append(ctxItem('Duplicate', () => duplicateEntry(entry)));
+    ctxMenu.append(ctxItem('Delete', () => deleteEntry(entry), true));
+  }
+  ctxMenu.style.left = x + 'px';
+  ctxMenu.style.top = y + 'px';
+  ctxMenu.hidden = false;
+  const r = ctxMenu.getBoundingClientRect();
+  if (r.right > window.innerWidth) ctxMenu.style.left = Math.max(4, window.innerWidth - r.width - 4) + 'px';
+  if (r.bottom > window.innerHeight) ctxMenu.style.top = Math.max(4, window.innerHeight - r.height - 4) + 'px';
+}
+$('#tree').addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  const row = e.target.closest('.row');
+  openCtxMenu(e.clientX, e.clientY, row ? { path: row.dataset.path, type: row.dataset.type } : null);
+});
+window.addEventListener('click', (e) => { if (!ctxMenu.contains(e.target)) closeCtxMenu(); });
+window.addEventListener('blur', closeCtxMenu);
+window.addEventListener('scroll', closeCtxMenu, true);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeCtxMenu(); });
+
+async function createEntry(dir, type) {
+  const label = type === 'dir' ? 'folder' : 'file';
+  const name = prompt('New ' + label + (dir ? ' in "' + dir + '/"' : '') + ':');
+  if (!name || !name.trim()) return;
+  const p = joinRel(dir, name.trim());
+  try {
+    await api('/api/entry', Object.assign({ method: 'POST', body: JSON.stringify({ path: p, type }) }, jsonHeaders));
+  } catch (e) { alert(e.message); return; }
+  if (dir) { expanded.add(dir); LS.set('expanded', [...expanded]); }
+  await loadTree();
+  if (type === 'file') openFile(p).catch((e) => alert(e.message));
+}
+async function duplicateEntry(entry) {
+  const dir = dirName(entry.path);
+  const base = baseName(entry.path);
+  const dot = entry.type === 'file' ? base.lastIndexOf('.') : -1;
+  const stem = dot > 0 ? base.slice(0, dot) : base;
+  const ext = dot > 0 ? base.slice(dot) : '';
+  const name = prompt('Duplicate "' + entry.path + '" as:', stem + ' copy' + ext);
+  if (!name || !name.trim()) return;
+  try {
+    await api('/api/copy', Object.assign({ method: 'POST', body: JSON.stringify({ from: entry.path, to: joinRel(dir, name.trim()) }) }, jsonHeaders));
+  } catch (e) { alert(e.message); return; }
+  if (dir) { expanded.add(dir); LS.set('expanded', [...expanded]); }
+  await loadTree();
+}
+async function deleteEntry(entry) {
+  const what = entry.type === 'dir' ? 'folder and everything inside it' : 'file';
+  if (!confirm('Delete this ' + what + '?\n\n' + entry.path)) return;
+  try {
+    await api('/api/entry?path=' + encodeURIComponent(entry.path), { method: 'DELETE' });
+  } catch (e) { alert(e.message); return; }
+  if (curf.path === entry.path || (entry.type === 'dir' && curf.path && curf.path.startsWith(entry.path + '/'))) {
+    curf = { path: null, mtimeMs: 0, saved: '' };
+    ed.setDoc('% open a file from the tree\n');
+    applyDir();
+    $('#fileName').textContent = 'no file open';
+    setDirty(false);
+  }
+  expanded.delete(entry.path);
+  await loadTree();
+}
+
 // ------------------------------------------------------------------ main file
 function flattenTex(nodes, acc) {
   for (const n of nodes) {
