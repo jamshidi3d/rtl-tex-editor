@@ -258,6 +258,9 @@ function setPreviewMode(m) {
   $('#mdView').hidden = !md;
   $('#openPdf').style.display = md ? 'none' : '';
   $('#pdfInvertBtn').style.display = md ? 'none' : '';
+  $('#pdfZoomBar').style.display = md ? 'none' : '';
+  $('#pdfOutlineBtn').style.display = md ? 'none' : '';
+  if (md) setOutlineOpen(false);
   $('#previewTitle').textContent = md ? 'Markdown preview' : 'PDF preview';
   $('#pdfWrap').classList.toggle('empty-shown', !md && !pdfLoaded);
 }
@@ -439,14 +442,43 @@ function waitForWidth(el, ms) {
     tick();
   });
 }
-// Apply 'page-width' once the container actually has a width. On the very first
-// build the PDF pane may still be 0-wide when `pagesinit` fires, which left the
-// pages unscaled/invisible until a second build — retry across a few frames.
-function fitPdf(tries) {
+// Zoom. `pdfZoomMode` is 'fit' (page-width, re-applied on every resize) or a
+// fixed scale factor (1 = 100%, set by the zoom buttons/wheel and left alone
+// across resizes, like any normal PDF viewer). Remembered across reloads.
+const ZOOM_STEPS = [0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4];
+function normalizeZoomMode(v) {
+  const n = Number(v);
+  return v === 'fit' || !(Number.isFinite(n) && n > 0.05 && n < 10) ? 'fit' : n;
+}
+let pdfZoomMode = normalizeZoomMode(LS.get('pdfZoom', 'fit'));
+function updateZoomUI() {
+  const pct = pdfViewer && pdfViewer.pdfDocument ? Math.round((pdfViewer.currentScale || 1) * 100) : 100;
+  $('#pdfZoomLabel').textContent = pct + '%';
+}
+// Apply the zoom mode once the container actually has a width. On the very
+// first build the PDF pane may still be 0-wide when `pagesinit` fires, which
+// left the pages unscaled/invisible until a second build — retry a few frames.
+function applyZoom(tries) {
   if (!pdfViewer || !pdfViewer.pdfDocument) return;
+  if (pdfZoomMode !== 'fit') {
+    try { pdfViewer.currentScale = pdfZoomMode; } catch (e) { /* ignore */ }
+    updateZoomUI();
+    return;
+  }
   const w = $('#pdfDoc').clientWidth;
-  if (w > 20) { try { pdfViewer.currentScaleValue = 'page-width'; } catch (e) { /* ignore */ } return; }
-  if ((tries || 0) < 30) requestAnimationFrame(() => fitPdf((tries || 0) + 1));
+  if (w > 20) { try { pdfViewer.currentScaleValue = 'page-width'; } catch (e) { /* ignore */ } updateZoomUI(); return; }
+  if ((tries || 0) < 30) requestAnimationFrame(() => applyZoom((tries || 0) + 1));
+}
+function setZoom(mode) {
+  pdfZoomMode = mode;
+  LS.set('pdfZoom', mode);
+  applyZoom(0);
+}
+function zoomBy(dir) {
+  const cur = (pdfViewer && pdfViewer.currentScale) || 1;
+  const ordered = dir > 0 ? ZOOM_STEPS : [...ZOOM_STEPS].reverse();
+  const next = ordered.find((z) => (dir > 0 ? z > cur + 0.001 : z < cur - 0.001));
+  setZoom(next != null ? next : ordered[ordered.length - 1]);
 }
 // PDF dark mode. `pdfInvert`: 'auto' follows the app theme, 'on'/'off' override.
 // Toggle cycles auto -> on -> off with Alt+I (see the keydown listener).
@@ -472,7 +504,7 @@ function cyclePdfInvert() {
 function kickPdfRender() {
   [0, 120, 400].forEach((ms) => setTimeout(() => {
     if (!pdfViewer || !pdfViewer.pdfDocument) return;
-    fitPdf(0);
+    applyZoom(0);
     try { pdfViewer.update(); } catch (e) { /* ignore */ }
   }, ms));
 }
@@ -492,11 +524,17 @@ function initPdfViewer() {
     annotationEditorMode: -1,
   });
   pdfLinkService.setViewer(pdfViewer);
-  pdfEventBus.on('pagesinit', () => { fitPdf(0); restorePdfScroll(); });
-  pdfEventBus.on('pagesloaded', () => { fitPdf(0); try { pdfViewer.update(); } catch (e) { /* ignore */ } });
-  pdfFitRO = new ResizeObserver(debounce(() => fitPdf(0), 120));
+  pdfEventBus.on('pagesinit', () => { applyZoom(0); restorePdfScroll(); });
+  pdfEventBus.on('pagesloaded', () => { applyZoom(0); try { pdfViewer.update(); } catch (e) { /* ignore */ } });
+  pdfFitRO = new ResizeObserver(debounce(() => applyZoom(0), 120));
   pdfFitRO.observe($('#pdfDoc'));
   $('#pdfDoc').addEventListener('click', onPdfClick);
+  // Ctrl+wheel zooms the PDF instead of the whole browser page.
+  $('#pdfDoc').addEventListener('wheel', (e) => {
+    if (!e.ctrlKey || !pdfViewer.pdfDocument) return;
+    e.preventDefault();
+    zoomBy(e.deltaY < 0 ? 1 : -1);
+  }, { passive: false });
   try { pdfViewer.setDocument(null); } catch (e) { /* prime */ }
 }
 async function loadPdf(url) {
@@ -530,6 +568,7 @@ async function loadPdf(url) {
   pdfUrl = url;
   $('#pdfWrap').classList.remove('empty-shown'); // reveal now that a doc is in
   kickPdfRender();
+  if (!$('#pdfOutline').hidden) renderOutline();
 }
 function restorePdfScroll() {
   if (_pdfKeep && _pdfKeep.page && _pdfKeep.page <= pdfViewer.pagesCount) {
@@ -545,6 +584,50 @@ function unloadPdf() {
   pdfLoaded = false;
   pdfUrl = null;
   if (old) { try { old.destroy(); } catch (e) { /* ignore */ } }
+  renderOutline();
+}
+
+// ------------------------------------------------------------------ pdf outline
+// A "content browser" sidebar built from the PDF's own bookmarks (hyperref's
+// \section etc. become these when the thesis is built with bookmarks on).
+function goToOutlineItem(it) {
+  if (it.dest) { try { pdfLinkService.goToDestination(it.dest); } catch (e) { /* ignore */ } }
+  else if (it.url) { window.open(it.url, '_blank', 'noopener'); }
+}
+function buildOutlineList(items, depth) {
+  const ul = document.createElement('ul');
+  for (const it of items) {
+    const li = document.createElement('li');
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.style.paddingLeft = (8 + depth * 14) + 'px';
+    row.textContent = it.title || '(untitled)';
+    row.title = row.textContent;
+    row.addEventListener('click', () => goToOutlineItem(it));
+    li.append(row);
+    if (it.items && it.items.length) li.append(buildOutlineList(it.items, depth + 1));
+    ul.append(li);
+  }
+  return ul;
+}
+async function renderOutline() {
+  const host = $('#pdfOutline');
+  if (host.hidden) return;
+  if (!pdfDocObj) { host.innerHTML = '<div class="pdf-outline-empty">no PDF loaded</div>'; return; }
+  const doc = pdfDocObj, seq = pdfSeq;
+  host.innerHTML = '<div class="pdf-outline-empty">loading…</div>';
+  let items = null;
+  try { items = await doc.getOutline(); } catch (e) { /* ignore */ }
+  if (seq !== pdfSeq || host.hidden) return; // doc changed or panel closed meanwhile
+  if (!items || !items.length) { host.innerHTML = '<div class="pdf-outline-empty">this PDF has no bookmarks</div>'; return; }
+  host.innerHTML = '';
+  host.append(buildOutlineList(items, 0));
+}
+function setOutlineOpen(open) {
+  $('#pdfOutline').hidden = !open;
+  $('#pdfOutlineBtn').classList.toggle('active', open);
+  LS.set('pdfOutlineOpen', open);
+  if (open) renderOutline();
 }
 function pdfGoto(page, xPt, yPt) {
   if (!pdfViewer || !pdfLoaded || page > pdfViewer.pagesCount) return;
@@ -1114,6 +1197,10 @@ $('#theme').addEventListener('click', () => {
 });
 // PDF dark mode — the ◐ button on the preview pane, or Alt+I anywhere.
 $('#pdfInvertBtn').addEventListener('click', cyclePdfInvert);
+$('#pdfZoomOut').addEventListener('click', () => zoomBy(-1));
+$('#pdfZoomIn').addEventListener('click', () => zoomBy(1));
+$('#pdfZoomLabel').addEventListener('click', () => setZoom('fit'));
+$('#pdfOutlineBtn').addEventListener('click', () => setOutlineOpen($('#pdfOutline').hidden));
 document.addEventListener('keydown', (e) => {
   if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.key === 'i' || e.key === 'I')) {
     e.preventDefault();
@@ -1258,6 +1345,7 @@ function restoreLayout() {
   $('#sync').classList.toggle('on', syncOn);
   pdfInvert = ['auto', 'on', 'off'].includes(LS.get('pdfInvert', 'auto')) ? LS.get('pdfInvert', 'auto') : 'auto';
   applyPdfInvert();
+  setOutlineOpen(LS.get('pdfOutlineOpen', false));
   $('#showAux').checked = LS.get('showAux', false);
   $('#workbench').style.setProperty('--sidebar-w', LS.get('sidebarW', 260) + 'px');
   const ef = LS.get('edFlex', 0.5);

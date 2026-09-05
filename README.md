@@ -133,6 +133,8 @@ The **dir:** button cycles three modes (remembered):
 | Editor left / right of the PDF | **⇄ sides** |
 | Light / dark | **☾ / ☀** |
 | Open the raw PDF | **↗** in the preview header (browser's own viewer — print / download / find) |
+| Zoom the PDF | **−** / **+** in the preview header, `Ctrl` + mouse wheel over the PDF, or click the percentage to reset to fit-width (remembered) |
+| Browse the PDF's chapters/sections | **☰** in the preview header — a bookmarks panel built from the PDF's own outline (needs `hyperref` bookmarks in the build) |
 | Resize panes | drag the bars between sidebar / editor / PDF |
 | Build log | bar at the bottom (auto-opens on a failed build) |
 

@@ -58,13 +58,22 @@
         <div class="pane-head">
           <span id="previewTitle">PDF preview</span>
           <span class="grow"></span>
+          <button id="pdfOutlineBtn" class="icon" title="document outline">☰</button>
+          <span id="pdfZoomBar" class="zoom-bar">
+            <button id="pdfZoomOut" class="icon" title="zoom out">−</button>
+            <button id="pdfZoomLabel" class="icon zoom-label" title="reset to fit width">100%</button>
+            <button id="pdfZoomIn" class="icon" title="zoom in">+</button>
+          </span>
           <button id="pdfInvertBtn" class="icon" title="PDF dark mode — Alt+I">◐</button>
           <a id="openPdf" class="icon" target="_blank" title="open PDF in new tab">↗</a>
         </div>
         <div id="pdfWrap" class="empty-shown">
-          <div id="pdfDoc"><div id="pdfViewer" class="pdfViewer"></div></div>
-          <div id="mdView" class="md-view" hidden></div>
-          <div id="pdfEmpty" class="empty">Build to see the PDF here.</div>
+          <nav id="pdfOutline" class="pdf-outline" hidden></nav>
+          <div id="pdfContent">
+            <div id="pdfDoc"><div id="pdfViewer" class="pdfViewer"></div></div>
+            <div id="mdView" class="md-view" hidden></div>
+            <div id="pdfEmpty" class="empty">Build to see the PDF here.</div>
+          </div>
         </div>
       </section>
     </main>

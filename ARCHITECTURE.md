@@ -184,6 +184,8 @@ JSON localStorage. Section banners, in file order:
 | **build** | `build()` — save if dirty → `POST /api/compile` → on success set the PDF src and `loadPdf()`; on failure open the log bar. `renderLog(text)` colourises `!`/error/warning lines. |
 | **markdown preview** | The right pane is a Markdown viewer when a `.md` file is open. `ensureMdLibs()` lazy-loads marked + DOMPurify + KaTeX (+ mermaid only if a diagram is present) from cdnjs. `mdToDom(src)` pulls code + math out before `marked` parses, splices KaTeX back, tags each top-level block with `data-src-line` for scroll sync. |
 | **pdf viewer** | pdf.js `PDFViewer` (not the browser plugin) so we can scroll to a point, flash a box, and read clicks for reverse SyncTeX. `ensurePdfLibs()` loads `pdf.min.js` then `pdf_viewer.min.js` (order matters — see §10). `pdfWorkerSrc()` = a same-origin blob worker that `importScripts()` the cdnjs worker, else `/api/pdfjs-worker`. `loadPdf(url)` has a `pdfSeq` re-entrancy guard and waits for the pane to have width. `onPdfClick` → `reverseSync` → `jumpToSource`. `flashLine(ln)` → `ed.flash(ln)`. PDF dark mode: `pdfInvert` ∈ `auto|on|off`, `applyPdfInvert()` toggles `.pdf-invert` (CSS `filter: invert() hue-rotate()`), `cyclePdfInvert()` on **Alt+I** or the ◐ button. |
+| **pdf zoom** | `pdfZoomMode` is `'fit'` (page-width, re-applied by `applyZoom()` on `pagesinit`/`pagesloaded`/every `ResizeObserver` tick) or a fixed pdf.js `currentScale` number left alone across resizes. `setZoom(mode)` persists to `LS('pdfZoom')`; `zoomBy(±1)` steps through `ZOOM_STEPS`; `Ctrl`+wheel over `#pdfDoc` calls it too. Buttons: `#pdfZoomOut`/`#pdfZoomIn`/`#pdfZoomLabel` (click → reset to fit). |
+| **pdf outline** | `#pdfOutline`, a bookmarks sidebar (the "content browser"), toggled by `#pdfOutlineBtn` and persisted at `LS('pdfOutlineOpen')`. `renderOutline()` awaits `pdfDocObj.getOutline()` (pdf.js's own hyperref-bookmark tree: `{title, dest, url, items}`, guarded by the `pdfSeq` re-entrancy counter so a stale doc's result can't land after a newer load) and recursively builds indented `.row` divs; clicking one calls `pdfLinkService.goToDestination(it.dest)` (named or explicit destination) or opens `it.url`. Forced closed in Markdown mode. |
 | **view sync** | `⇅` toggle. `tw` = per-pane eased-scroll tweens (`makePaneTween`); `paneBusy(name)` distinguishes a programmatic scroll from a user one. `syncFromEditor()` → `mdSyncFromEditor` (anchored on `data-src-line`) or `pdfSyncFromEditor` (`GET /api/synctex` → `pdfGoto` + `showSynctexHighlight`). `onCaretActivity()` runs the caret-driven forward sync, guarded by `reverseJumpGuard` so a PDF-click jump doesn't bounce back. |
 | **status / file tree / main file / splitters / toolbar / open folder** | small, self-describing. Tree click opens a file or toggles a dir; the ⚙ toolbar buttons cycle theme / dir / sync / editor-side; drag bars resize and call `refreshCM()`. |
 | **boot** | §5. |
@@ -347,7 +349,8 @@ ed.refresh()            // view.requestMeasure()  (after a resize)
 ## 11. Persistence (`localStorage`, `rwe.` prefix)
 
 `theme` · `side` (editor left/right) · `dir` (`auto`/`rtl`/`ltr`) · `sync`
-(bool) · `pdfInvert` (`auto`/`on`/`off`) · `showAux` (bool) · `sidebarW` ·
+(bool) · `pdfInvert` (`auto`/`on`/`off`) · `pdfZoom` (`'fit'` or a scale
+number) · `pdfOutlineOpen` (bool) · `showAux` (bool) · `sidebarW` ·
 `edFlex` (editor/PDF split ratio) · `expanded` (tree node paths) · `lastFile` ·
 `main` (main `.tex`) · `recentRoots` · `dirReset2` (one-time migration flag).
 

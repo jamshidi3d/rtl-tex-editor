@@ -162,11 +162,29 @@ body {
 
 #editor { flex: 1; min-height: 0; overflow: hidden; }
 
-#pdfWrap { position: relative; flex: 1; min-height: 0; background: #525659; }
+#pdfWrap { display: flex; flex: 1; min-height: 0; background: #525659; }
+#pdfContent { position: relative; flex: 1; min-width: 0; }
 #pdfDoc { position: absolute; inset: 0; overflow: auto; }
 #pdfWrap.empty-shown #pdfDoc { visibility: hidden; }
 #pdfViewer.pdfViewer { position: relative; }
 .pdfViewer .page { margin: 10px auto; border: 0; }
+
+.zoom-bar { display: flex; align-items: center; gap: 2px; }
+.zoom-bar .icon { padding: 3px 6px; }
+.zoom-label { min-width: 42px; text-align: center; font-variant-numeric: tabular-nums; }
+
+.pdf-outline {
+  width: 240px; flex: none; overflow: auto;
+  background: var(--bg-2); border-right: 1px solid var(--border);
+  color: var(--fg); font-size: 12.5px; padding: 6px 0;
+}
+.pdf-outline ul { list-style: none; margin: 0; padding: 0; }
+.pdf-outline .row {
+  padding: 4px 10px; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pdf-outline .row:hover { background: var(--bg-3); }
+.pdf-outline-empty { padding: 10px 12px; color: var(--fg-dim); }
 
 /* PDF dark mode — invert the rendered pages; hue-rotate keeps colours sane.
    Toggle with Alt+I (auto follows the app theme). */
